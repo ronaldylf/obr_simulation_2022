@@ -9,78 +9,80 @@ const double root_delay = 100;
 double initial_basespeed = 250;
 double baseforce = 500;
 
+
+double green_margin = 10;
+
 // dynamic variables ////////////////////////
 double leftspeed;
 double rightspeed;
 double basespeed;
 
 async Task Main() {
+    // IO.Print();
     // IO.PrintLine();
+    // IO.ClearPrint();
+    // IO.Write();
+    // IO.WriteLine();
+    // IO.ClearWrite();
     // await Time.Delay(root_delay);
     leftspeed = basespeed;
     rightspeed = basespeed;
     basespeed = initial_basespeed;
     await stop();
-    motorR().Locked = false;
-    motorL().Locked = false;
     while(true) {
         await Time.Delay(root_delay);
         await MainProcess();
     }
-
 }
 
 async Task MainProcess() {
     await followLine();
-    bool has_left_green = (leftColor().Green>leftColor().Red) && (leftColor().Green>leftColor().Blue);
-    bool has_right_green = (rightColor().Green>rightColor().Red) && (rightColor().Green>rightColor().Blue);
+    bool has_left_green = ((leftColor().Green-green_margin)>leftColor().Red) && ((leftColor().Green-green_margin)>leftColor().Blue);
+    bool has_right_green = ((rightColor().Green-green_margin)>rightColor().Red) && ((rightColor().Green-green_margin)>rightColor().Blue);
     bool has_obstacle = false;
     bool possible_right_crossing = (readLine()=="0 1 1");
     bool possible_left_crossing = (readLine()=="1 1 0");
     bool absolute_crossing = (readLine()=="1 1 1");
 
     if (has_left_green || has_right_green) {
-        stop();
+        IO.Print("possible green");
+        await stop();
         if (has_left_green && has_right_green) {
             // 180 degrees
-            motorR().Apply(baseforce, basespeed);
-            motorL().Apply(baseforce, -basespeed);
-            await moveFrontalRotations(basespeed, 0.33);
-            debug();
+            await moveFrontalAngles(-basespeed, -180);
         } else if (has_left_green) {
-            await SharpCurve(-1);
+            await SharpCurve(basespeed, -1);
         } else if (has_right_green) {
-            await SharpCurve(1);
+            await SharpCurve(basespeed, 1);
         }
-        stop();
-        return;
-    }
-
-    if (absolute_crossing) {
-        stop();
-        motorR().Apply(baseforce, basespeed);
-        motorL().Apply(baseforce, basespeed);
-        await moveFrontalRotations(basespeed, 0.33);
         await stop();
         return;
     }
 
+    if (absolute_crossing) {
+        IO.PrintLine("absolute crossing");
+        await moveFrontalRotations(basespeed, 0.33);
+        return;
+    }
+
     if (possible_right_crossing || possible_left_crossing) {
+        IO.PrintLine("possible crossing");
         bool crossing  = false;
         if (crossing) {
         } else { // 90 degrees
             double c = 1;
             if (possible_right_crossing) { c = 1; }
             if (possible_left_crossing) { c = -1; }
-            IO.Print($"90 graus: {c}");
+            IO.PrintLine($"90 graus: {c}");
+            await moveFrontalRotations(basespeed, 0.2);
             await SharpCurve(c);
         }
         return;
     }
 }
 
-async Task moveFrontalRotations(double speed, double rotations, double read_side=1) {
-    stop();
+async Task moveFrontalRotations(double speed, double rotations, double read_side=1, double angle_mode=0) {
+    await stop();
     Servomotor motor;
     if (read_side>=0) {
         motor = Bot.GetComponent<Servomotor>(right_motor_name);
@@ -88,18 +90,30 @@ async Task moveFrontalRotations(double speed, double rotations, double read_side
         motor = Bot.GetComponent<Servomotor>(left_motor_name);
     }
 
+
+    rotations = Math.Abs(rotations);
     double accumulated_rotations = 0;
     double current_rotations = 0;
     double start_angle = 0;
     double current_angle = 0;
     
-    motorR().Apply(baseforce, speed);
-    motorL().Apply(baseforce, speed);
+    if (angle_mode==0) {
+        motorR().Apply(baseforce, speed);
+        motorL().Apply(baseforce, speed);
+    } else if (angle_mode>0) {
+        motorL().Apply(baseforce, Math.Abs(speed));
+        motorR().Apply(baseforce, -Math.Abs(speed));
+        
+    } else if (angle_mode<0) {
+        motorL().Apply(baseforce, -Math.Abs(speed));
+        motorR().Apply(baseforce, Math.Abs(speed));
+    }
+    
     while(true) {
         await Time.Delay(root_delay);
         
-        IO.Print($"accumulated_rotations: {accumulated_rotations}");
-        if (accumulated_rotations>=rotations) { stop(); return; }
+        //IO.Print($"accumulated_rotations: {accumulated_rotations}");
+        if (accumulated_rotations>=rotations) { await stop(); return; }
 
         current_angle = motor.Angle;
         if (current_angle>=0) {
@@ -112,9 +126,9 @@ async Task moveFrontalRotations(double speed, double rotations, double read_side
                     current_rotations = (start_angle - current_angle)/360;
                 }
                 
-                if ((accumulated_rotations+current_rotations)>=rotations) { stop(); return; }
+                if ((accumulated_rotations+current_rotations)>=rotations) { await stop(); return; }
                 current_angle = motor.Angle;
-                IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
+                //IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
             }
 
             accumulated_rotations += current_rotations;
@@ -128,18 +142,34 @@ async Task moveFrontalRotations(double speed, double rotations, double read_side
                     current_rotations = (Math.Abs(current_angle) - Math.Abs(start_angle))/360;
                 }
                 
-                if ((accumulated_rotations+current_rotations)>=rotations) { stop(); return; }
+                if ((accumulated_rotations+current_rotations)>=rotations) { await stop(); return; }
                 current_angle = motor.Angle;
-                IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
+                //IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
             }
         }
         accumulated_rotations += current_rotations;
     }
 }
 
+async Task moveFrontalAngles(double speed, double desired_degrees) {
+    double rotations_per_degree = 4.25f / 90f;
+    double side = getNumberSignal(desired_degrees);
+    double desired_rotations = Math.Abs(rotations_per_degree*desired_degrees);
+    double desired_speed = Math.Abs(speed);
+    await moveFrontalRotations(desired_speed, desired_rotations, -side, side);
+}
+
+double getNumberSignal(double number) {
+    if (number>0) {
+        return 1;
+    } else if (number<0) {
+        return -1;
+    }
+    return 0;
+}
 async Task followLine() {
     string line_status = readLine();
-    IO.Print(line_status);
+    //IO.Print(line_status);
     switch(line_status) {
         case "0 1 0":
             leftspeed = basespeed;
@@ -160,6 +190,9 @@ async Task followLine() {
             rightspeed = basespeed;
             break;
     }
+    IO.Print($"{leftspeed} {rightspeed}");
+    motorL().Locked = false;
+    motorR().Locked = false;
     motorL().Apply(baseforce, leftspeed);
     motorR().Apply(baseforce, rightspeed);
     if (!(basespeed==leftspeed && basespeed==rightspeed)) {
@@ -199,11 +232,10 @@ Servomotor motorL() {
     return motor;
 }
 
-async Task SharpCurve(double c=1) {
+async Task SharpCurve(double speed, double c=1) {
     await stop();
-    await Time.Delay(200);
-    motorR().Apply(baseforce, basespeed*(-c));
-    motorL().Apply(baseforce, basespeed*(c));
+    motorR().Apply(baseforce, speed*(-c));
+    motorL().Apply(baseforce, speed*(c));
     while(true) {
         await Time.Delay(root_delay);
         if (c == -1 && readLine()=="1 0 0") {
@@ -212,6 +244,7 @@ async Task SharpCurve(double c=1) {
             break;
         }
     }
+    await moveFrontalAngles(speed, 5);
     await stop();
 }
 
