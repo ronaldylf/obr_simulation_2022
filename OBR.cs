@@ -28,7 +28,7 @@ async Task Main() {
     // IO.PrintLine();
     // IO.ClearPrint();
     // IO.Write();
-    // IO.WriteLine();
+    // // IO.Print();
     // IO.ClearWrite();
     // await Time.Delay(root_delay);
     leftspeed = basespeed;
@@ -42,7 +42,8 @@ async Task Main() {
     bool debug_mode = false; // debug mode
     if (debug_mode) {
         /////////////
-        await moveFrontalAngles(-basespeed, -90);
+        await moveFrontalRotations(basespeed, 1);
+        await moveFrontalAngles(-basespeed, -90F);
 
         await debug("over");
     }
@@ -75,67 +76,21 @@ async Task MainProcess() {
     if (has_obstacle) {
         IO.PrintLine("obstacle ahead");
         await stop();
-        double c = -1;
-        double back_rotations = 0.2;
-        double side_rotations = 0.7;
-        double front_rotations = 0.4;
-        double last_rotations = 0.2;
+        float c = -1F;
+        float turn_angle = 90F;
+        float back_rotations = 0.3F;
+        float side_rotations = 1.2F;
+        float front_rotations = 2F;
         await moveFrontalRotations(-basespeed, -back_rotations);
-        await moveFrontalAngles(basespeed, 85*c);
-        await moveFrontalRotations(500, side_rotations);
-
-        if (c>0) {
-            await stop();
-            lockLeft(true);
-            lockRight(false);
-            applyRight(baseforce, 500);
-        } else {
-            await stop();
-            lockRight(true);
-            lockLeft(false);
-            applyLeft(baseforce, 500);
-        }
-
-        await Time.Delay(2.5*1000);
-        await moveFrontalRotations(500, front_rotations);
-
-        if (c>0) {
-            await stop();
-            lockLeft(true);
-            lockRight(false);
-            applyRight(baseforce, 500);
-        } else {
-            await stop();
-            lockRight(true);
-            lockLeft(false);
-            applyLeft(baseforce, 500);
-        }
-
-        IO.Print("starting last phase");
-        while(isGap()) { await Time.Delay(100); }
-
-        await moveFrontalRotations(basespeed, last_rotations);
-        await moveFrontalAngles(basespeed*c, 90*c);
-
-        await debug("over");
-
-        
-        /*
-        double c = -1;
-        double turn_angle = 90;
-        double back_rotations = 0.3;
-        double side_rotations = 1.2;
-        double front_rotations = 2;
-        await moveFrontalRotations(-basespeed, -back_rotations);
-        await moveFrontalAngles(turnspeed*c, turn_angle*c);
+        await moveFrontalAngles(turnspeed, turn_angle*c);
         await moveFrontalRotations(basespeed, side_rotations);
-        await moveFrontalAngles(turnspeed*-c, turn_angle*-c);
+        await moveFrontalAngles(turnspeed, turn_angle*-c);
 
         await moveFrontalRotations(basespeed, front_rotations);
 
-        await moveFrontalAngles(turnspeed*-c, turn_angle*-c);
+        await moveFrontalAngles(turnspeed, turn_angle*-c);
         await moveFrontalRotations(basespeed, side_rotations);
-        await moveFrontalAngles(turnspeed*c, turn_angle*c);
+        await moveFrontalAngles(turnspeed, turn_angle*c);
 
         applyLeft(baseforce, -200);
         applyRight(baseforce, -200);
@@ -147,32 +102,31 @@ async Task MainProcess() {
             last_time = Time.Timestamp;
             delta_time = last_time - start_time;
         }
-        */
         await stop();
         return;
     }
 
     if (has_left_green || has_right_green) {
         IO.PrintLine("possible green");
-        double c = 0;
+        float c = 0F;
         if (has_left_green && has_right_green) {
             // 180 degrees
             IO.PrintLine("180 green");
-            c = 0;
+            c = 0F;
         } else if (has_left_green) {
             IO.PrintLine("left green");
-            c = -1;
+            c = -1F;
         } else if (has_right_green) {
             IO.PrintLine("right green");
-            c = 1;
+            c = 1F;
         }
         await stop();
         if (c!=0) {
-            await moveFrontalRotations(basespeed, 0.7);
-            await moveFrontalAngles(basespeed, 10*c);
-            await SharpCurve(basespeed, c);
+            await moveFrontalRotations(basespeed, 0.7F);
+            await moveFrontalAngles(basespeed, (float)(10*c));
+            await SharpCurve(basespeed, (double)c);
         } else { // 180
-            await moveFrontalAngles(-500, -170);
+            await moveFrontalAngles(-500, -170F);
             applyLeft(baseforce, -basespeed);
             applyRight(baseforce, -basespeed);
             while (isGap()) {await Time.Delay(50);}
@@ -183,30 +137,31 @@ async Task MainProcess() {
 
     if (absolute_crossing) {
         IO.PrintLine("absolute crossing");
-        await moveFrontalRotations(basespeed, 0.33);
+        await moveFrontalRotations(basespeed, 0.33F);
         return;
     }
 
     if (possible_right_crossing || possible_left_crossing) {
         IO.PrintLine("possible crossing");
-        await moveFrontalRotations(basespeed, 0.5);
+        await moveFrontalRotations(basespeed, 0.5F);
         bool crossing  = !isGap();
         if (crossing) {
         } else { // 90 degrees
-            double c = 1;
-            if (possible_right_crossing) { c = 1; }
-            if (possible_left_crossing) { c = -1; }
+            float c = 1;
+            if (possible_right_crossing) { c = 1F; }
+            if (possible_left_crossing) { c = -1F; }
             IO.PrintLine($"90 graus: {c}");
-            await SharpCurve(basespeed, c);
-            await moveFrontalAngles(basespeed, 5*c);
+            await SharpCurve(basespeed, (double)c);
+            await moveFrontalAngles(basespeed, (float)(5*c));
         }
         return;
     }
 }
 
-async Task moveFrontalRotations(double speed, double rotations, double read_side=1, double angle_mode=0) {
+async Task moveFrontalRotations(double speed, float rotations, float read_side=1, float angle_mode=0) {
     await stop();
-    IO.PrintLine($"desired_rotations: {rotations}");
+    // IO.Print($"desired_rotations: {rotations}");
+    //await debug($"desired_rotations: {rotations}");
     Servomotor motor;
     if (read_side>=0) {
         motor = Bot.GetComponent<Servomotor>(right_motor_name);
@@ -222,57 +177,57 @@ async Task moveFrontalRotations(double speed, double rotations, double read_side
     } else if (angle_mode>0) {
         applyLeft(baseforce, Math.Abs(speed));
         applyRight(baseforce, -Math.Abs(speed));
-        //motor = Bot.GetComponent<Servomotor>(left_motor_name);
-        motor = Bot.GetComponent<Servomotor>(back_left_motor_name);
+        motor = Bot.GetComponent<Servomotor>(left_motor_name);
+        //motor = Bot.GetComponent<Servomotor>(back_left_motor_name);
         
     } else if (angle_mode<0) {
         applyRight(baseforce, Math.Abs(speed));
         applyLeft(baseforce, -Math.Abs(speed));
-        //motor = Bot.GetComponent<Servomotor>(right_motor_name);
-        motor = Bot.GetComponent<Servomotor>(back_right_motor_name);
+        motor = Bot.GetComponent<Servomotor>(right_motor_name);
+        //motor = Bot.GetComponent<Servomotor>(back_right_motor_name);
     }
     motor.Locked = false;
     
 
-    rotations = Math.Abs(rotations);
-    double accumulated_rotations = 0;
-    double current_rotations = 0;
-    double start_angle = 0;
-    double current_angle = 0;
+    rotations = (float)Math.Abs(rotations);
+    float accumulated_rotations = 0;
+    float current_rotations = 0;
+    float start_angle = 0;
+    float current_angle = 0;
     
     while(true) {
-        current_angle = motor.Angle;
+        current_angle = (float)motor.Angle;
         if (current_angle>=0) {
-            start_angle = current_angle;
+            start_angle = (float)current_angle;
             while(current_angle>0) {
                 if (speed>0) {
-                    current_rotations = Math.Abs((current_angle - start_angle)/360);
+                    current_rotations = (float)Math.Abs((current_angle - start_angle)/360F);
                 } else {
-                    current_rotations = Math.Abs((start_angle - current_angle)/360);
+                    current_rotations = (float)Math.Abs((start_angle - current_angle)/360F);
                 }
                 
-                IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
+                //IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
                 if ((accumulated_rotations+current_rotations)>=rotations) { await stop(); return; }
                 await Time.Delay(50);
-                current_angle = motor.Angle;
+                current_angle = (float)motor.Angle;
             }
         } else {
-            start_angle = current_angle;
+            start_angle = (float)current_angle;
             while(current_angle<0) {
                 if (speed>0) {
-                    current_rotations = Math.Abs((start_angle - current_angle)/360);
+                    current_rotations = (float)Math.Abs((start_angle - current_angle)/360F);
                 } else {
-                    current_rotations = Math.Abs((current_angle - start_angle)/360);
+                    current_rotations = (float)Math.Abs((current_angle - start_angle)/360F);
                 }
                 
-                IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
+                // IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
                 if ((accumulated_rotations+current_rotations)>=rotations) { await stop(); return; }
                 await Time.Delay(50);
-                current_angle = motor.Angle;
+                current_angle = (float)motor.Angle;
             }
         }
         accumulated_rotations += current_rotations;
-        IO.Print($"accumulated_rotations: {accumulated_rotations}");
+        // IO.Print($"accumulated_rotations: {accumulated_rotations}");
         if (accumulated_rotations>=rotations) { await stop(); return; }
         await Time.Delay(50);
     }
@@ -280,16 +235,16 @@ async Task moveFrontalRotations(double speed, double rotations, double read_side
 
 
 
-async Task moveFrontalAngles(double speed, double desired_degrees) {
-    double rotations_per_degree = 0.017f / 90f;
-    double side = getNumberSignal(desired_degrees);
-    double desired_rotations = Math.Abs(rotations_per_degree*desired_degrees);
+async Task moveFrontalAngles(double speed, float desired_degrees) {
+    float rotations_per_degree = (float)(0.8F / 90F);
+    float side = getNumberSignal(desired_degrees);
+    float desired_rotations = Math.Abs(rotations_per_degree*desired_degrees);
     double desired_speed = Math.Abs(speed);
     desired_speed = 500;
     await moveFrontalRotations(desired_speed, desired_rotations, -side, side);
 }
 
-double getNumberSignal(double number) {
+float getNumberSignal(float number) {
     if (number>0) {
         return 1;
     } else if (number<0) {
@@ -322,11 +277,6 @@ async Task followLine() {
     }
     lockLeft(false);
     lockRight(false);
-    // applyLeft(baseforce, leftspeed);
-    // applyRight(baseforce, rightspeed);
-    // if (!(basespeed==leftspeed && basespeed==rightspeed)) {
-    //     await Time.Delay((200*470)/basespeed);
-    // }
     if (!(basespeed==leftspeed && basespeed==rightspeed)) {
         double c = Math.Abs(leftspeed)/leftspeed;
         applyLeft(baseforce, 500*c);
@@ -383,8 +333,8 @@ Servomotor backmotorL() {
 async Task SharpCurve(double speed, double c=1) {
     await stop();
     speed = 500;
-    applyRight(baseforce, speed*(-c));
-    applyLeft(baseforce, speed*(c));
+    applyRight(baseforce, speed*-c);
+    applyLeft(baseforce, speed*c);
     while(true) {
         await Time.Delay(root_delay);
         if (c == -1 && readLine()=="1 0 0") {
@@ -394,8 +344,8 @@ async Task SharpCurve(double speed, double c=1) {
         }
         
     }
-    // 9;10
-    await moveFrontalAngles(speed, 20*c); // as vezes não funciona
+    float new_c = (float)c;
+    await moveFrontalAngles(speed, 20*new_c);
 }
 
 async Task stop(double stop_delay=250) {
@@ -457,7 +407,7 @@ bool isRescue() {
 }
 
 async Task RescueProcess() {
-    await moveFrontalRotations(400, 1.9);
+    await moveFrontalRotations(400, 1.9F);
     await stop();
     IO.Print("Inside Rescue Arena");
     await debug("Inside Rescue Arena");
