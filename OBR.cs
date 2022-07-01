@@ -42,9 +42,7 @@ async Task Main() {
     bool debug_mode = false; // debug mode
     if (debug_mode) {
         /////////////
-        await moveFrontalRotations(basespeed, 1);
-        await moveFrontalAngles(-basespeed, -90F);
-
+        await moveFrontalAngles(basespeed, -45);
         await debug("over");
     }
     
@@ -77,10 +75,10 @@ async Task MainProcess() {
         IO.PrintLine("obstacle ahead");
         await stop();
         float c = -1F;
-        float turn_angle = 90F;
-        float back_rotations = 0.3F;
-        float side_rotations = 1.2F;
-        float front_rotations = 2F;
+        float turn_angle = 45F;
+        float back_rotations = 0.6F;
+        float side_rotations = 1.5F;
+        float front_rotations = 1.1F;
         await moveFrontalRotations(-basespeed, -back_rotations);
         await moveFrontalAngles(turnspeed, turn_angle*c);
         await moveFrontalRotations(basespeed, side_rotations);
@@ -122,7 +120,7 @@ async Task MainProcess() {
         }
         await stop();
         if (c!=0) {
-            await moveFrontalRotations(basespeed, 0.7F);
+            await moveFrontalRotations(basespeed, 0.4F);
             await moveFrontalAngles(basespeed, (float)(10*c));
             await SharpCurve(basespeed, (double)c);
         } else { // 180
@@ -143,7 +141,7 @@ async Task MainProcess() {
 
     if (possible_right_crossing || possible_left_crossing) {
         IO.PrintLine("possible crossing");
-        await moveFrontalRotations(basespeed, 0.5F);
+        await moveFrontalRotations(basespeed, 0.3F);
         bool crossing  = !isGap();
         if (crossing) {
         } else { // 90 degrees
@@ -232,8 +230,6 @@ async Task moveFrontalRotations(double speed, float rotations, float read_side=1
         await Time.Delay(50);
     }
 }
-
-
 
 async Task moveFrontalAngles(double speed, float desired_degrees) {
     float rotations_per_degree = (float)(0.8F / 90F);
@@ -407,7 +403,7 @@ bool isRescue() {
 }
 
 async Task RescueProcess() {
-    await moveFrontalRotations(400, 1.9F);
+    await moveFrontalRotations(400, 1.4F);
     await stop();
     IO.Print("Inside Rescue Arena");
     await debug("Inside Rescue Arena");
