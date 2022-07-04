@@ -5,12 +5,11 @@ const string right_motor_name = "rmotor";
 const string left_motor_name = "lmotor";
 const string back_right_motor_name = "backrightmotor";
 const string back_left_motor_name = "backleftmotor";
-const string ultraFront = "ultraF";
 const double root_delay = 50;
 
 // editable variables ////////////////////////
-double initial_basespeed = 200;
-double initial_baseforce = 500;
+double initial_basespeed = 190;
+double initial_baseforce = 220;
 double initial_turnspeed = 200;
 
 double green_margin = 10;
@@ -22,6 +21,14 @@ double rightspeed;
 double basespeed;
 double baseforce;
 double turnspeed;
+
+// for PID line follower:
+int error = 0, last_error = 0;
+float     Kp = 100.0f, // 200
+        Ki = 40f, // 40
+        Kd = 15f; // 1.3
+
+float     P=0, I=0, D=0, PID=0;
 
 async Task Main() {
     // IO.Print();
@@ -36,13 +43,15 @@ async Task Main() {
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
-    //IO.ClearWrite();
+    await Time.Delay(1000);
+    await upArm();
     await stop();
 
     bool debug_mode = false; // debug mode
     if (debug_mode) {
         /////////////
-        await moveFrontalAngles(basespeed, -45);
+        await moveFrontalRotations(basespeed, 1);
+        await moveFrontalAngles(basespeed, 90);
         await debug("over");
     }
     
@@ -52,33 +61,45 @@ async Task Main() {
         await MainProcess();
     }
     await RescueProcess();
+    basespeed = initial_basespeed;
+    baseforce = initial_baseforce;
+    turnspeed = initial_turnspeed;
 }
 
 async Task MainProcess() {
     await followLine();
     bool has_left_green = ((leftColor().Green-green_margin)>leftColor().Red) && ((leftColor().Green-green_margin)>leftColor().Blue);
     bool has_right_green = ((rightColor().Green-green_margin)>rightColor().Red) && ((rightColor().Green-green_margin)>rightColor().Blue);
-    bool has_obstacle = frontDistance()<=0.7;
+    bool has_obstacle = upDistance()<=0.3; //0.7
     bool possible_right_crossing = (readLine()=="0 1 1");
     bool possible_left_crossing = (readLine()=="1 1 0");
     bool absolute_crossing = (readLine()=="1 1 1");
-    bool up_ramp = Bot.Inclination>=30 && Bot.Inclination<=350;
+    
 
-    if (up_ramp) {
-        IO.PrintLine($"up_ramp: {Bot.Inclination}");
-        basespeed = 400;
+    if (isUpRamp()) {
+        IO.Print($"up_ramp: {Bot.Inclination}");
+        baseforce = 500;
+        basespeed = initial_basespeed*1.5;
         return;
     }
+    
+    if (isDownRamp()) {
+        IO.Print($"down_ramp: {Bot.Inclination}");
+        basespeed = initial_basespeed*0.5;
+        return;
+    }
+
     basespeed = initial_basespeed;
+    baseforce = initial_baseforce;
 
     if (has_obstacle) {
         IO.PrintLine("obstacle ahead");
         await stop();
         float c = -1F;
         float turn_angle = 45F;
-        float back_rotations = 0.6F;
+        float back_rotations = 1;
         float side_rotations = 1.5F;
-        float front_rotations = 1.1F;
+        float front_rotations = 0.9F;
         await moveFrontalRotations(-basespeed, -back_rotations);
         await moveFrontalAngles(turnspeed, turn_angle*c);
         await moveFrontalRotations(basespeed, side_rotations);
@@ -123,6 +144,7 @@ async Task MainProcess() {
             await moveFrontalRotations(basespeed, 0.4F);
             await moveFrontalAngles(basespeed, (float)(10*c));
             await SharpCurve(basespeed, (double)c);
+            await moveFrontalRotations(basespeed, 0.2f);
         } else { // 180
             await moveFrontalAngles(-500, -170F);
             applyLeft(baseforce, -basespeed);
@@ -141,8 +163,9 @@ async Task MainProcess() {
 
     if (possible_right_crossing || possible_left_crossing) {
         IO.PrintLine("possible crossing");
-        await moveFrontalRotations(basespeed, 0.3F);
-        bool crossing  = !isGap();
+        await moveFrontalRotations(basespeed, 0.2F); //0.3
+        await stop();
+        bool crossing  = !isGap() && readFullLine()!="0 0 0 0 0";
         if (crossing) {
         } else { // 90 degrees
             float c = 1;
@@ -150,14 +173,13 @@ async Task MainProcess() {
             if (possible_left_crossing) { c = -1F; }
             IO.PrintLine($"90 graus: {c}");
             await SharpCurve(basespeed, (double)c);
-            await moveFrontalAngles(basespeed, (float)(5*c));
         }
         return;
     }
 }
 
 async Task moveFrontalRotations(double speed, float rotations, float read_side=1, float angle_mode=0) {
-    await stop();
+    await stop(500); // problem: robot away from ground and bug motors
     // IO.Print($"desired_rotations: {rotations}");
     //await debug($"desired_rotations: {rotations}");
     Servomotor motor;
@@ -167,8 +189,6 @@ async Task moveFrontalRotations(double speed, float rotations, float read_side=1
         motor = Bot.GetComponent<Servomotor>(left_motor_name);
     }
 
-    lockRight(false);
-    lockLeft(false);
     if (angle_mode==0) {
         applyRight(baseforce, speed);
         applyLeft(baseforce, speed);
@@ -249,38 +269,58 @@ float getNumberSignal(float number) {
     return 0;
 }
 async Task followLine() {
-    string line_status = readLine();
-    //IO.Print(line_status);
-    switch(line_status) {
-        case "0 1 0":
-            leftspeed = basespeed;
-            rightspeed = basespeed;
+    switch(readFullLine()) {
+        case "0 0 1 0 0":
+            error = 0;
             break;
-
-        case "0 0 0":
-            leftspeed = basespeed;
-            rightspeed = basespeed;
+        case "0 0 1 1 0":
+            error = 1;
             break;
-
-        case "0 0 1":
-            leftspeed = basespeed;
-            rightspeed = -basespeed;
+        case "0 0 0 1 0":
+            error = 2;
             break;
-        case "1 0 0":
-            leftspeed = -basespeed;
-            rightspeed = basespeed;
+        case "0 0 0 1 1":
+            error = 3;
+            break;
+        case "0 0 0 0 1":
+            error = 4;
+            break;
+        
+        case "0 1 1 0 0":
+            error = -1;
+            break;
+        
+        case "0 1 0 0 0":
+            error = -2;
+            break;
+        
+        case "1 1 0 0 0":
+            error = -3;
+            break;
+        
+        case "1 0 0 0 0":
+            error = -4;
             break;
     }
+
     lockLeft(false);
     lockRight(false);
-    if (!(basespeed==leftspeed && basespeed==rightspeed)) {
-        double c = Math.Abs(leftspeed)/leftspeed;
-        applyLeft(baseforce, 500*c);
-        applyRight(baseforce, 500*-c);
-    } else {
-        applyLeft(baseforce, leftspeed);
-        applyRight(baseforce, rightspeed);
-    }
+
+    const float delta_time = 50.0f/1000.0f;
+
+    P = error * Kp;
+    I += error * Ki * delta_time;
+    if(I > 250) I = 250;
+
+    D = (error - last_error) * Kd / delta_time;
+
+    PID = P + I + D;
+    IO.Print(PID.ToString());
+
+    applyRight(baseforce, (double)basespeed-PID);
+    applyLeft(baseforce, (double)basespeed+PID);
+    
+    last_error = error;
 }
 
 string readLine() {
@@ -292,6 +332,21 @@ string readLine() {
     line_status = line_status.Replace("True", "1");
     return line_status;
 }
+
+string readFullLine() {
+    bool left_line = !Bot.GetComponent<ColorSensor>(left_color_name).Digital;
+    bool mid_line = !Bot.GetComponent<ColorSensor>(mid_color_name).Digital;
+    bool right_line = !Bot.GetComponent<ColorSensor>(right_color_name).Digital;
+
+    bool extreme_right_line = !Bot.GetComponent<ColorSensor>("RRsensor").Digital;
+    bool extreme_left_line = !Bot.GetComponent<ColorSensor>("LLsensor").Digital;
+
+    string line_status = $"{extreme_left_line} {left_line} {mid_line} {right_line} {extreme_right_line}"; // 1(black) 0(white)
+    line_status = line_status.Replace("False", "0");
+    line_status = line_status.Replace("True", "1");
+    return line_status;
+}
+
 
 Color leftColor() {
     return Bot.GetComponent<ColorSensor>(left_color_name).Analog;
@@ -341,10 +396,15 @@ async Task SharpCurve(double speed, double c=1) {
         
     }
     float new_c = (float)c;
-    await moveFrontalAngles(speed, 20*new_c);
+    //await moveFrontalAngles(speed, 20*new_c);
+    //await debug(readLine());
 }
 
 async Task stop(double stop_delay=250) {
+    P = 0;
+    I = 0;
+    D = 0;
+    last_error = 0;
     lockRight(true);
     lockLeft(true);
     await Time.Delay(stop_delay);
@@ -388,10 +448,26 @@ void lockRight(bool locked=true) {
     backmotorR().Locked = locked;
 }
 
-double frontDistance() {
-    double distance = Bot.GetComponent<UltrasonicSensor>(ultraFront).Analog;
+double upDistance() {
+    double distance = Bot.GetComponent<UltrasonicSensor>("upUltraF").Analog;
     if (distance==-1) { distance = 9999999; }
     return distance;
+}
+
+double downDistance() {
+    double distance = Bot.GetComponent<UltrasonicSensor>("downUltraF").Analog;
+    if (distance==-1) { distance = 9999999; }
+    return distance;
+}
+
+bool isUpRamp() {
+    double inclination = Bot.Inclination;
+    return inclination>=30 && inclination<=350;
+}
+
+bool isDownRamp() {
+    double inclination = Bot.Inclination;
+    return inclination>=5 && inclination<=28;
 }
 
 bool isGap() {
@@ -402,9 +478,43 @@ bool isRescue() {
     return (midColor().Blue>midColor().Red && midColor().Blue>midColor().Green);
 }
 
+async Task upArm() {
+    Servomotor servo = Bot.GetComponent<Servomotor>("arm");
+    servo.Locked = false;
+    servo.Apply(baseforce, 100);
+    await Time.Delay(2*1000);
+    servo.Apply(0, 0);
+    servo.Locked = true;
+}
+
+async Task downArm() {
+    Servomotor servo = Bot.GetComponent<Servomotor>("arm");
+    servo.Locked = false;
+    servo.Apply(baseforce, -100);
+    await Time.Delay(2*1000);
+    servo.Apply(0, 0);
+    servo.Locked = true;
+}
+
 async Task RescueProcess() {
-    await moveFrontalRotations(400, 1.4F);
-    await stop();
+    float start_rotations = 1f;
+    float clear_rotations = 0.3f;
+    await moveFrontalRotations(100, start_rotations+clear_rotations);
+    await moveFrontalRotations(-100, -clear_rotations);
     IO.Print("Inside Rescue Arena");
-    await debug("Inside Rescue Arena");
+
+    basespeed = 120;
+
+    downArm();
+    while(true) {
+        applyRight(baseforce, basespeed);
+        applyLeft(baseforce, basespeed);
+        await Time.Delay(root_delay);
+        ////
+        if (upDistance()<=8.4) {
+            await debug("case 1");
+        }
+    }
+
+    await debug("rescue is over");
 }
