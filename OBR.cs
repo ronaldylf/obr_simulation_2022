@@ -46,12 +46,17 @@ async Task Main() {
     turnspeed = initial_turnspeed;
     IO.ClearPrint();
     await Time.Delay(1000);
-    await upArm();
+    //await upArm();
     await stop();
 
     bool debug_mode = false; // debug mode
     if (debug_mode) {
         /////////////
+        await openDoor();
+        IO.Print("opened");
+        await closeDoor();
+        await debug("closed");
+
         await moveFrontalRotations(basespeed, 1);
         await moveFrontalAngles(basespeed, 90);
         await debug("over");
@@ -408,8 +413,6 @@ async Task stop(double stop_delay=250) {
     I = 0;
     D = 0;
     last_error = 0;
-    applyRight(0, 0);
-    applyLeft(0, 0);
     lockRight(true);
     lockLeft(true);
     await Time.Delay(stop_delay);
@@ -501,6 +504,24 @@ async Task downArm() {
     is_arm_up = false;
 }
 
+async Task openDoor() {
+    Servomotor servo = Bot.GetComponent<Servomotor>("door");
+    servo.Locked = false;
+    servo.Apply(baseforce, 130);
+    await Time.Delay(1*1000);
+    servo.Locked = true;
+    is_arm_up = true;
+}
+
+async Task closeDoor() {
+    Servomotor servo = Bot.GetComponent<Servomotor>("door");
+    servo.Locked = false;
+    servo.Apply(baseforce, -130);
+    await Time.Delay(2*1000);
+    servo.Locked = true;
+    is_arm_up = true;
+}
+
 bool isBox() {
     string color = Bot.GetComponent<ColorSensor>("verifyBox").Analog.ToString();
     return color=="Preto";
@@ -524,12 +545,12 @@ async Task RescueProcess() {
     IO.Print("Inside Rescue Arena");
 
     await downArm();
-    while(true) {
+    while(true) { // loop until find black box
         await Time.Delay(root_delay);
         applyRight(baseforce, basespeed);
         applyLeft(baseforce, basespeed);
         ////
-        if (frontDistance()<=9) {
+        if (frontDistance()<=10) {
             await stop();
             await moveFrontalAngles(basespeed, 45);
             bool first_confirmation = isBox();
@@ -543,8 +564,9 @@ async Task RescueProcess() {
                 await Time.Delay(500);
                 await stop();
                 IO.Print("found box");
+                break;
             } else {
-                await adjustFrontDistance(basespeed, 3.5);
+                await adjustFrontDistance(basespeed, 4);
                 await moveFrontalAngles(basespeed, 45);
                 IO.Print("box not found, continuing search");
             }
