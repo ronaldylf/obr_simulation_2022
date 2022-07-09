@@ -1,20 +1,19 @@
-const string left_color_name = "left_color";
-const string mid_color_name = "mid_color";
-const string right_color_name = "right_color";
-const string right_motor_name = "rmotor";
-const string left_motor_name = "lmotor";
-const string back_right_motor_name = "backrightmotor";
-const string back_left_motor_name = "backleftmotor";
 const double root_delay = 50;
+ColorSensor RightColorSensor = Bot.GetComponent<ColorSensor>("right_color");
+ColorSensor MidColorSensor = Bot.GetComponent<ColorSensor>("mid_color");
+ColorSensor LeftColorSensor = Bot.GetComponent<ColorSensor>("left_color");
+ColorSensor ExtremeLeftColorSensor = Bot.GetComponent<ColorSensor>("LLsensor");
+ColorSensor ExtremeRightColorSensor = Bot.GetComponent<ColorSensor>("RRsensor");
 
-
+UltrasonicSensor ultraUp = Bot.GetComponent<UltrasonicSensor>("ultraUp");
+UltrasonicSensor ultraDown = Bot.GetComponent<UltrasonicSensor>("ultraDown");
 
 public class Motor {
     public Servomotor motor;
     public string motor_name = "";
     public bool Locked = false;
     public bool can_run = true;
-    double accumulated_rotations = 0;
+    public double amount_rotations = 0;
     double current_rotations = 0;
     double start_angle = 0;
     double current_angle = 0;
@@ -31,26 +30,30 @@ public class Motor {
         walk(0, 0);
     }
     
-    public void resetMotors() {
+    public void reset() {
         can_run = true;
-        accumulated_rotations = 0;
+        amount_rotations = 0;
         current_rotations = 0;
         start_angle = 0;
         current_angle = 0;
     }
 
-    public async Task walk(double force, double speed, double rotations=0) {
+    public async Task walk(double force, double speed, double rotations=0, bool block=false) {
+        Lock(false);
         if (rotations==0) {
             motor.Apply(force, speed);
         } else {
-            Lock(false);
             start_angle = motor.Angle;
             while(can_run) {
                 await Time.Delay(root_delay);
                 gyrate(force, speed, rotations);
             }
-            await stop(100);
-            resetMotors();
+            if (block) {
+                Lock(true);
+            } else {
+                await stop(100);
+            }
+            reset();
         }
     }
 
@@ -74,7 +77,7 @@ public class Motor {
             } else {
                 current_rotations = Math.Abs((start_angle - current_angle)/360F);
             }
-            possible_rotations = accumulated_rotations + current_rotations;
+            possible_rotations = amount_rotations + current_rotations;
         } else {
             if (start_angle>0) { start_angle = current_angle; }
             if (speed>0) {
@@ -82,11 +85,10 @@ public class Motor {
             } else {
                 current_rotations = Math.Abs((current_angle - start_angle)/360F);
             }
-            possible_rotations = accumulated_rotations + current_rotations;
+            possible_rotations = amount_rotations + current_rotations;
         }
-        accumulated_rotations += current_rotations;
-        can_run = accumulated_rotations < rotations;
-        //IO.PrintLine($"accumulated_rotations: {accumulated_rotations}");
+        amount_rotations += current_rotations;
+        can_run = amount_rotations < rotations;
     }
 }
 
@@ -98,14 +100,14 @@ Motor armR = new Motor("armRight");
 Motor armL = new Motor("armLeft");
 Motor handR = new Motor("handRight");
 Motor handL = new Motor("handLeft");
-
+Motor door = new Motor("door");
 
 // editable variables ////////////////////////
 double initial_basespeed = 190;
 double initial_baseforce = 220;
 double initial_turnspeed = 200;
 
-double green_margin = 10;
+
 double blue_margin = 6;
 
 // dynamic variables ////////////////////////
@@ -138,30 +140,33 @@ async Task Main() {
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
     IO.ClearPrint();
-    await Time.Delay(1000);
-    //await upArm();
-    await stop_();
 
-    bool debug_mode = true; // debug mode
+    bool debug_mode = false; // debug mode
     if (debug_mode) {
-        motorR.Lock(true);
-        motorL.Lock(true);
-        back_motorL.Lock(true);
-        back_motorR.Lock(true);
-
         await armUp();
-        IO.Print("opened arm");
-
-        await Time.Delay(1*1000);
-        
         await handOpen();
-        IO.Print("opened hand");
+        IO.Print("levantou a garra");
         
+        while (true) {
+            await Time.Delay(root_delay);
+            applyRight(500, 100);
+            applyLeft(500, 100);
+        }
+
+        await stop_();
+        IO.Print("pegando bolinha");
+
+        await grabItem();
+    
+        await openDoor();
 
         await debug("", false);
         /////////////////
     }
     
+    await armUp();
+    await handOpen();
+    await stop_();
 
     while(!isRescue()) {
         await Time.Delay(root_delay);
@@ -171,49 +176,26 @@ async Task Main() {
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
-}
 
-async Task armUp(double speed=100, double rotations=1.4) {
-    armR.Lock(true); armL.Lock(true);
-    await Time.Delay(500);
-    armR.Lock(false); armL.Lock(false);
-
-    armR.walk(500, speed, rotations);
-    await armL.walk(500, speed, rotations);
-
-    armR.Lock(true); armL.Lock(true);
-}
-
-async Task armDown(double speed=100, double rotations=3) {
-    await armUp(-speed);
-}
-
-async Task handOpen(double speed=100, double rotations=1.5) {
-    handR.Lock(true); handL.Lock(true);
-    await Time.Delay(500);
-    handR.Lock(false); handL.Lock(false);
-
-    handR.walk(500, -speed, rotations);
-    await handL.walk(500, speed, rotations);
-
-    handR.Lock(true); handL.Lock(true);
-
-}
-
-async Task handClose(double speed=100, double rotations=3) {
-    await handOpen(-speed);
 }
 
 async Task MainProcess() {
     await followLine();
     // add in green to read all 5 color sensors
-    bool has_left_green = ((leftColor().Green-green_margin)>leftColor().Red) && ((leftColor().Green-green_margin)>leftColor().Blue);
-    bool has_right_green = ((rightColor().Green-green_margin)>rightColor().Red) && ((rightColor().Green-green_margin)>rightColor().Blue);
-    bool has_obstacle = frontDistance()<=0.3; //0.7
+    bool has_left_green = isGreen(LeftColorSensor);
+    bool has_right_green = isGreen(RightColorSensor);
+    bool has_obstacle = getDistance(ultraUp)<=0.3;
+    bool has_cube = getDistance(ultraDown)<=0.3 && !has_obstacle;
     bool possible_right_crossing = (readLine()=="0 1 1");
     bool possible_left_crossing = (readLine()=="1 1 0");
     bool absolute_crossing = (readLine()=="1 1 1");
     
+
+    if (has_cube) {
+        IO.PrintLine("blue cube ahead");
+        await moveFrontalRotations(-basespeed, -0.2f);
+        await grabItem();
+    }
 
     if (isUpRamp()) {
         IO.Print($"up_ramp: {Bot.Inclination}");
@@ -324,9 +306,9 @@ async Task moveFrontalRotations(double speed, float rotations, float read_side=1
     double stop_time = 350;
     Servomotor motor;
     if (read_side>=0) {
-        motor = Bot.GetComponent<Servomotor>(right_motor_name);
+        motor = motorR.motor;
     } else {
-        motor = Bot.GetComponent<Servomotor>(left_motor_name);
+        motor = motorL.motor;
     }
 
     if (angle_mode==0) {
@@ -335,14 +317,12 @@ async Task moveFrontalRotations(double speed, float rotations, float read_side=1
     } else if (angle_mode>0) {
         applyLeft(baseforce, Math.Abs(speed));
         applyRight(baseforce, -Math.Abs(speed));
-        motor = Bot.GetComponent<Servomotor>(left_motor_name);
-        //motor = Bot.GetComponent<Servomotor>(back_left_motor_name);
+        motor = motorL.motor;
         
     } else if (angle_mode<0) {
         applyRight(baseforce, Math.Abs(speed));
         applyLeft(baseforce, -Math.Abs(speed));
-        motor = Bot.GetComponent<Servomotor>(right_motor_name);
-        //motor = Bot.GetComponent<Servomotor>(back_right_motor_name);
+        motor = motorR.motor;
     }
     motor.Locked = false;
     
@@ -464,9 +444,9 @@ async Task followLine() {
 }
 
 string readLine() {
-    bool left_line = !Bot.GetComponent<ColorSensor>(left_color_name).Digital;
-    bool mid_line = !Bot.GetComponent<ColorSensor>(mid_color_name).Digital;
-    bool right_line = !Bot.GetComponent<ColorSensor>(right_color_name).Digital;
+    bool left_line = !LeftColorSensor.Digital;
+    bool mid_line = !MidColorSensor.Digital;
+    bool right_line = !RightColorSensor.Digital;
     string line_status = $"{left_line} {mid_line} {right_line}"; // 1(black) 0(white)
     line_status = line_status.Replace("False", "0");
     line_status = line_status.Replace("True", "1");
@@ -474,32 +454,18 @@ string readLine() {
 }
 
 string readFullLine() {
-    bool left_line = !Bot.GetComponent<ColorSensor>(left_color_name).Digital;
-    bool mid_line = !Bot.GetComponent<ColorSensor>(mid_color_name).Digital;
-    bool right_line = !Bot.GetComponent<ColorSensor>(right_color_name).Digital;
+    bool left_line = !LeftColorSensor.Digital;
+    bool mid_line = !MidColorSensor.Digital;
+    bool right_line = !RightColorSensor.Digital;
 
-    bool extreme_right_line = !Bot.GetComponent<ColorSensor>("RRsensor").Digital;
-    bool extreme_left_line = !Bot.GetComponent<ColorSensor>("LLsensor").Digital;
+    bool extreme_right_line = !ExtremeRightColorSensor.Digital;
+    bool extreme_left_line = !ExtremeLeftColorSensor.Digital;
 
     string line_status = $"{extreme_left_line} {left_line} {mid_line} {right_line} {extreme_right_line}"; // 1(black) 0(white)
     line_status = line_status.Replace("False", "0");
     line_status = line_status.Replace("True", "1");
     return line_status;
 }
-
-
-Color leftColor() {
-    return Bot.GetComponent<ColorSensor>(left_color_name).Analog;
-}
-
-Color midColor() {
-    return Bot.GetComponent<ColorSensor>(mid_color_name).Analog;
-}
-
-Color rightColor() {
-    return Bot.GetComponent<ColorSensor>(right_color_name).Analog;
-}
-
 
 async Task SharpCurve(double speed, double c=1) {
     await stop_();
@@ -516,8 +482,6 @@ async Task SharpCurve(double speed, double c=1) {
         
     }
     float new_c = (float)c;
-    //await moveFrontalAngles(speed, 20*new_c);
-    //await debug(readLine());
 }
 
 async Task stop_(double stop_delay=250) {
@@ -545,11 +509,15 @@ async Task debug(string text="debug here", bool put_text=true) {
 }
 
 void applyRight(double force, double speed) {
+    motorR.motor.Locked = false;
+    back_motorR.motor.Locked = false;
     motorR.motor.Apply(force, speed);
     back_motorR.motor.Apply(force, speed);
 }
 
 void applyLeft(double force, double speed) {
+    motorL.motor.Locked = false;
+    back_motorL.motor.Locked = false;
     motorL.motor.Apply(force, speed);
     back_motorL.motor.Apply(force, speed);
 }
@@ -564,20 +532,11 @@ void lockRight(bool locked=true) {
     back_motorR.motor.Locked = locked;
 }
 
-double upDistance() {
-    double distance = Bot.GetComponent<UltrasonicSensor>("upUltraF").Analog;
+double getDistance(UltrasonicSensor ultra) {
+    double distance = ultra.Analog;
     if (distance==-1) { distance = 9999999; }
+    if (ultra.GetHashCode()==ultraUp.GetHashCode()) { distance -= 2; }
     return distance;
-}
-
-double downDistance() {
-    double distance = Bot.GetComponent<UltrasonicSensor>("downUltraF").Analog;
-    if (distance==-1) { distance = 9999999; }
-    return distance;
-}
-
-double frontDistance() {
-    if (is_arm_up) { return downDistance(); } else { return upDistance(); }
 }
 
 bool isUpRamp() {
@@ -595,27 +554,92 @@ bool isGap() {
 }
 
 bool isRescue() {
-    return (midColor().Blue>midColor().Red && midColor().Blue>midColor().Green);
+    Color reading = MidColorSensor.Analog;
+    return (reading.Blue>reading.Red && reading.Blue>reading.Green);
 }
 
-// put functions of arm here
-
-async Task openDoor() {
-    Servomotor servo = Bot.GetComponent<Servomotor>("door");
-    servo.Locked = false;
-    servo.Apply(baseforce, 130);
-    await Time.Delay(1*1000);
-    servo.Locked = true;
-    is_arm_up = true;
+async Task openDoor(bool block=true, double speed=150, double rotations=1) {
+    lockMotors();
+    door.Lock(false);
+    await door.walk(500, speed, rotations, block);
 }
 
-async Task closeDoor() {
-    Servomotor servo = Bot.GetComponent<Servomotor>("door");
-    servo.Locked = false;
-    servo.Apply(baseforce, -130);
-    await Time.Delay(2*1000);
-    servo.Locked = true;
-    is_arm_up = true;
+async Task closeDoor(bool block=true, double speed=150) {
+    await openDoor(false, -speed);
+}
+
+async Task grabItem() {
+    lockMotors();
+    await armDown();
+    IO.Print("abaixou a garra");
+
+    await handClose();
+    IO.Print("fechou a mão");
+
+    // takes out item
+    lockMotors();
+    armR.Lock(true); armL.Lock(true); // blocks arm
+    handR.Lock(true); handL.Lock(true); // blocks hand
+    await Time.Delay(500);
+    
+
+    double speed = 100;
+    double rotations = 1.9;
+    double min_rate = 0.3;
+
+    armR.walk(500, speed, rotations, true);
+    armL.walk(500, speed, rotations, true);
+    while(((armR.amount_rotations/rotations)<min_rate) && ((armL.amount_rotations/rotations)<min_rate)) { await Time.Delay(root_delay); }
+    IO.Print("abrindo mão");
+    await handOpen();
+    IO.Print("pegou o item");
+}
+
+async Task armUp(double speed=100, double rotations=2) {
+    lockMotors();
+    armR.Lock(true); armL.Lock(true);
+    await Time.Delay(500);
+    armR.Lock(false); armL.Lock(false);
+
+    armR.walk(500, speed, rotations, true);
+    await armL.walk(500, speed, rotations, true);
+}
+
+async Task armDown(double speed=100, double rotations=1.6) {
+    await armUp(-speed);
+}
+
+async Task handOpen(double speed=100, double rotations=0.7) {
+    lockMotors();
+    handR.Lock(true); handL.Lock(true);
+    await Time.Delay(500);
+    handR.Lock(false); handL.Lock(false);
+
+    handR.walk(500, -speed, rotations, true);
+    await handL.walk(500, speed, rotations, true);
+}
+
+async Task handClose(double speed=160, double rotations=1) {
+    await handOpen(-speed, rotations);
+}
+
+void lockMotors() {
+    motorR.Lock(true);
+    motorL.Lock(true);
+    back_motorL.Lock(true);
+    back_motorR.Lock(true);
+}
+
+bool isGreen(ColorSensor sensor, double margin=10) {
+    Color reading = sensor.Analog;
+    double real = reading.Green-margin;
+    return ((real>reading.Red) && (real>reading.Blue));
+}
+
+bool isBlue(ColorSensor sensor, double margin=2) {
+    Color reading = sensor.Analog;
+    double real = reading.Blue-margin;
+    return ((real>reading.Red) && (real>reading.Green));
 }
 
 bool isBox() {
@@ -625,7 +649,7 @@ bool isBox() {
 
 async Task adjustFrontDistance(double speed, double desired_distance) {
     await stop_();
-    while (frontDistance()>desired_distance) {
+    while (getDistance(ultraUp)>desired_distance) {
         await Time.Delay(root_delay);
         applyRight(baseforce, speed);
         applyLeft(baseforce, speed);
@@ -645,7 +669,7 @@ async Task RescueProcess() {
         applyRight(baseforce, basespeed);
         applyLeft(baseforce, basespeed);
         ////
-        if (frontDistance()<=10) {
+        if (getDistance(ultraUp)<=10) {
             await stop_();
             await moveFrontalAngles(basespeed, 45);
             bool first_confirmation = isBox();
