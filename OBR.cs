@@ -36,8 +36,9 @@ public class Motor {
         name = motor_name;
     }
 
-    void stop() {
+    public async Task stop() {
         Lock(true);
+        await Time.Delay(1);
         Lock(false);
     }
     
@@ -53,6 +54,7 @@ public class Motor {
         if (rotations==0) {
             motor.Apply(force, speed);
         } else {
+            Lock(false);
             reset();
             start_angle = getAngle();
             can_run = true;
@@ -65,7 +67,7 @@ public class Motor {
             if (block) {
                 Lock(true);
             } else {
-                stop();
+                await stop();
             }
             reset();
         }
@@ -83,7 +85,6 @@ public class Motor {
         double side = rotations/Math.Abs(rotations);
         speed = Math.Abs(speed)*side;
         force = Math.Abs(force);
-        Lock(false);
         motor.Apply(force, speed);
         rotations = Math.Abs(rotations);
         current_angle = getAngle();
@@ -114,13 +115,14 @@ public class MultiMotors {
     Motor m2 = new Motor("");
     Motor m3 = new Motor("");
     Motor m4 = new Motor("");
+
     public double rotations_per_degree = 1;
 
-    public MultiMotors(string name1="", string name2="", string name3="", string name4="") { // constructor
-        m1 = new Motor(name1);
-        m2 = new Motor(name2);
-        m3 = new Motor(name3);
-        m4 = new Motor(name4);
+    public MultiMotors(ref Motor motor1, ref Motor motor2, ref Motor motor3, ref Motor motor4) { // constructor
+        m1 = motor1;
+        m2 = motor2;
+        m3 = motor3;
+        m4 = motor4;
     }
 
     void Lock(bool will_lock=true) {
@@ -130,8 +132,9 @@ public class MultiMotors {
         m4.Lock(will_lock);
     }
 
-    void stop() {
+    async Task stop() {
         Lock(true);
+        await Time.Delay(1);
         Lock(false);
     }
 
@@ -146,20 +149,19 @@ public class MultiMotors {
         m4.can_run = false;
     }
 
-    void resetForGyrate() {
+    async Task resetForGyrate() {
         resetMotors();
         m1.can_run = true;
         m2.can_run = true;
         m3.can_run = true;
         m4.can_run = true;
-        stop();
+        await stop();
     }
 
     
     public async Task together(double force, double speed1, double rot1=0, double speed2=0, double rot2=0) {
         if (rot1==0 && rot2==0 && speed2==0 && rot2==0) {
             //IO.Print("simple together");
-            speed1 = 50;
             await m1.walk(force, speed1);
             await m2.walk(force, speed1);
             await m3.walk(force, speed1);
@@ -171,32 +173,24 @@ public class MultiMotors {
                 speed2 = speed1;
                 rot2 = rot1;
             }
-
-            //IO.Print($"force={force} | speed1={speed1} | rot1={rot1} | speed2={speed2} | rot2={rot2}");
-            //IO.Print($"{m1.Locked} {m2.Locked} {m3.Locked} {m4.Locked}");
-            //while(true) await Time.Delay(root_delay);
-            resetForGyrate();
+            await resetForGyrate();
             while (m1.can_run || m2.can_run) {
                 await Time.Delay(root_delay);
                 m1.gyrate(force, speed1, rot1);
                 m2.gyrate(force, speed2, rot2);
                 m3.gyrate(force, speed1, rot1);
                 m4.gyrate(force, speed2, rot2);
-                //IO.Print($"{m1.can_run} {m2.can_run}");
-                IO.Print($"{m1.amount_rotations} {m2.amount_rotations} {m3.amount_rotations} {m4.amount_rotations}");
             }
-
             resetMotors();
-            stop();
+            await stop();
         }
     }
 
     public async Task turnDegree(double force, double speed, double degrees=0) {
         double rotations = rotations_per_degree*degrees;
-        await together(force, speed, rotations);
+        await together(force, speed, rotations, speed, -rotations);
     }
 }
-
 
 
 // editable variables ////////////////////////
@@ -228,7 +222,7 @@ async Task Main() {
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
-    both = new MultiMotors(motorL.name, motorR.name, back_motorL.name, back_motorR.name);
+    both = new MultiMotors(ref motorR, ref motorL, ref back_motorL, ref back_motorR);
     //both.rotations_per_degree = 0.8;
     IO.ClearPrint();
 
@@ -241,13 +235,9 @@ async Task Main() {
         back_motorL.Lock(false);
         back_motorR.Lock(false);
 
-        //both.rotations_per_degree = 0.8;
-        //await both.turnDegree(baseforce, basespeed, 90);
-        while(true) {
-            await both.together(baseforce, basespeed);
-            await Time.Delay(root_delay);
-        }
-        await debug("", false);
+        both.rotations_per_degree = 0.8;
+        await both.turnDegree(baseforce, basespeed, 90);
+        await debug("finished");
         /////////////////
     }
     
