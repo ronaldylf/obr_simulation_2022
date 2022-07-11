@@ -1,4 +1,3 @@
-const double root_delay = 50;
 ColorSensor RightColorSensor = Bot.GetComponent<ColorSensor>("right_color");
 ColorSensor MidColorSensor = Bot.GetComponent<ColorSensor>("mid_color");
 ColorSensor LeftColorSensor = Bot.GetComponent<ColorSensor>("left_color");
@@ -8,9 +7,22 @@ ColorSensor ExtremeRightColorSensor = Bot.GetComponent<ColorSensor>("RRsensor");
 UltrasonicSensor ultraUp = Bot.GetComponent<UltrasonicSensor>("ultraUp");
 UltrasonicSensor ultraDown = Bot.GetComponent<UltrasonicSensor>("ultraDown");
 
+Motor motorR = new Motor("rmotor");
+Motor motorL = new Motor("lmotor");
+Motor back_motorR = new Motor("backrightmotor");
+Motor back_motorL = new Motor("backleftmotor");
+MultiMotors both;
+
+Motor armR = new Motor("armRight");
+Motor armL = new Motor("armLeft");
+Motor handR = new Motor("handRight");
+Motor handL = new Motor("handLeft");
+Motor door = new Motor("door");
+
+
 public class Motor {
     public Servomotor motor;
-    public string motor_name = "";
+    public string name;
     public bool Locked = false;
     public bool can_run = true;
     public double amount_rotations = 0;
@@ -19,19 +31,17 @@ public class Motor {
     double current_angle = 0;
 
 
-    public Motor(string name="") { // constructor
-        motor = Bot.GetComponent<Servomotor>(name);
+    public Motor(string motor_name="") { // constructor
+        motor = Bot.GetComponent<Servomotor>(motor_name);
+        name = motor_name;
     }
 
-    public async Task stop(double stop_delay=250) {
+    void stop() {
         Lock(true);
-        await Time.Delay(stop_delay);
         Lock(false);
-        walk(0, 0);
     }
     
     public void reset() {
-        can_run = true;
         amount_rotations = 0;
         current_rotations = 0;
         start_angle = 0;
@@ -43,72 +53,157 @@ public class Motor {
         if (rotations==0) {
             motor.Apply(force, speed);
         } else {
-            start_angle = motor.Angle;
+            reset();
+            start_angle = getAngle();
+            can_run = true;
             while(can_run) {
                 await Time.Delay(root_delay);
                 gyrate(force, speed, rotations);
             }
+            
+            block = true;
             if (block) {
                 Lock(true);
             } else {
-                await stop(100);
+                stop();
             }
             reset();
         }
     }
 
-    public void Lock(bool will_lock=false) {
+    public void Lock(bool will_lock=true) {
         motor.Locked = will_lock;
     }
 
     public double getAngle() {
         return motor.Angle;
     }
-    
+
     public void gyrate(double force, double speed, double rotations) {
+        double side = rotations/Math.Abs(rotations);
+        speed = Math.Abs(speed)*side;
+        force = Math.Abs(force);
+        Lock(false);
         motor.Apply(force, speed);
-        double possible_rotations = 0;
         rotations = Math.Abs(rotations);
-        current_angle = motor.Angle;
+        current_angle = getAngle();
         if (current_angle>=0) {
             if (start_angle<=0) { start_angle = current_angle; }
             if (speed>0) {
-                current_rotations = Math.Abs((current_angle - start_angle)/360F);
+                current_rotations = Math.Abs((current_angle - start_angle)/360);
             } else {
-                current_rotations = Math.Abs((start_angle - current_angle)/360F);
+                current_rotations = Math.Abs((start_angle - current_angle)/360);
             }
-            possible_rotations = amount_rotations + current_rotations;
         } else {
             if (start_angle>0) { start_angle = current_angle; }
             if (speed>0) {
-                current_rotations = Math.Abs((start_angle - current_angle)/360F);
+                current_rotations = Math.Abs((start_angle - current_angle)/360);
             } else {
-                current_rotations = Math.Abs((current_angle - start_angle)/360F);
+                current_rotations = Math.Abs((current_angle - start_angle)/360);
             }
-            possible_rotations = amount_rotations + current_rotations;
         }
         amount_rotations += current_rotations;
         can_run = amount_rotations < rotations;
+        //IO.Print($"rotations:{amount_rotations} | can_run:{can_run}");
     }
 }
 
-Motor motorR = new Motor("rmotor");
-Motor motorL = new Motor("lmotor");
-Motor back_motorR = new Motor("backrightmotor");
-Motor back_motorL = new Motor("backleftmotor");
-Motor armR = new Motor("armRight");
-Motor armL = new Motor("armLeft");
-Motor handR = new Motor("handRight");
-Motor handL = new Motor("handLeft");
-Motor door = new Motor("door");
+
+public class MultiMotors {
+    Motor m1 = new Motor("");
+    Motor m2 = new Motor("");
+    Motor m3 = new Motor("");
+    Motor m4 = new Motor("");
+    public double rotations_per_degree = 1;
+
+    public MultiMotors(string name1="", string name2="", string name3="", string name4="") { // constructor
+        m1 = new Motor(name1);
+        m2 = new Motor(name2);
+        m3 = new Motor(name3);
+        m4 = new Motor(name4);
+    }
+
+    void Lock(bool will_lock=true) {
+        m1.Lock(will_lock);
+        m2.Lock(will_lock);
+        m3.Lock(will_lock);
+        m4.Lock(will_lock);
+    }
+
+    void stop() {
+        Lock(true);
+        Lock(false);
+    }
+
+    void resetMotors() {
+        m1.reset();
+        m2.reset();
+        m3.reset();
+        m4.reset();
+        m1.can_run = false;
+        m2.can_run = false;
+        m3.can_run = false;
+        m4.can_run = false;
+    }
+
+    void resetForGyrate() {
+        resetMotors();
+        m1.can_run = true;
+        m2.can_run = true;
+        m3.can_run = true;
+        m4.can_run = true;
+        stop();
+    }
+
+    
+    public async Task together(double force, double speed1, double rot1=0, double speed2=0, double rot2=0) {
+        if (rot1==0 && rot2==0 && speed2==0 && rot2==0) {
+            //IO.Print("simple together");
+            speed1 = 50;
+            await m1.walk(force, speed1);
+            await m2.walk(force, speed1);
+            await m3.walk(force, speed1);
+            await m4.walk(force, speed1);
+            //IO.PrintLine(m1.getAngle().ToString());
+        } else {
+            IO.Print("rotations together");
+            if (rot1!=0 && speed2==0 && rot2==0) {
+                speed2 = speed1;
+                rot2 = rot1;
+            }
+
+            //IO.Print($"force={force} | speed1={speed1} | rot1={rot1} | speed2={speed2} | rot2={rot2}");
+            //IO.Print($"{m1.Locked} {m2.Locked} {m3.Locked} {m4.Locked}");
+            //while(true) await Time.Delay(root_delay);
+            resetForGyrate();
+            while (m1.can_run || m2.can_run) {
+                await Time.Delay(root_delay);
+                m1.gyrate(force, speed1, rot1);
+                m2.gyrate(force, speed2, rot2);
+                m3.gyrate(force, speed1, rot1);
+                m4.gyrate(force, speed2, rot2);
+                //IO.Print($"{m1.can_run} {m2.can_run}");
+                IO.Print($"{m1.amount_rotations} {m2.amount_rotations} {m3.amount_rotations} {m4.amount_rotations}");
+            }
+
+            resetMotors();
+            stop();
+        }
+    }
+
+    public async Task turnDegree(double force, double speed, double degrees=0) {
+        double rotations = rotations_per_degree*degrees;
+        await together(force, speed, rotations);
+    }
+}
+
+
 
 // editable variables ////////////////////////
 double initial_basespeed = 190;
 double initial_baseforce = 220;
 double initial_turnspeed = 200;
 
-
-double blue_margin = 6;
 
 // dynamic variables ////////////////////////
 double leftspeed;
@@ -117,6 +212,7 @@ double basespeed;
 double baseforce;
 double turnspeed;
 bool is_arm_up = true;
+const double root_delay = 50;
 
 // for PID line follower:
 int error = 0, last_error = 0;
@@ -127,39 +223,30 @@ float     Kp = 100.0f, // 200
 float     P=0, I=0, D=0, PID=0;
 
 async Task Main() {
-    // IO.Print();
-    // IO.PrintLine();
-    // IO.ClearPrint();
-    // IO.Write();
-    // // IO.Print();
-    // IO.ClearWrite();
-    // await Time.Delay(root_delay);
     leftspeed = basespeed;
     rightspeed = basespeed;
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
+    both = new MultiMotors(motorL.name, motorR.name, back_motorL.name, back_motorR.name);
+    //both.rotations_per_degree = 0.8;
     IO.ClearPrint();
 
-    bool debug_mode = false; // debug mode
+    bool debug_mode = true; // debug mode
     if (debug_mode) {
-        await armUp();
-        await handOpen();
-        IO.Print("levantou a garra");
-        
-        while (true) {
+        IO.OpenConsole();
+        /////
+        motorR.Lock(false);
+        motorL.Lock(false);
+        back_motorL.Lock(false);
+        back_motorR.Lock(false);
+
+        //both.rotations_per_degree = 0.8;
+        //await both.turnDegree(baseforce, basespeed, 90);
+        while(true) {
+            await both.together(baseforce, basespeed);
             await Time.Delay(root_delay);
-            applyRight(500, 100);
-            applyLeft(500, 100);
         }
-
-        await stop_();
-        IO.Print("pegando bolinha");
-
-        await grabItem();
-    
-        await openDoor();
-
         await debug("", false);
         /////////////////
     }
@@ -217,18 +304,20 @@ async Task MainProcess() {
         IO.PrintLine("obstacle ahead");
         await stop_();
         float c = -1F;
-        float turn_angle = 65F;
-        float back_rotations = 0.7F;
-        float side_rotations = 1.5F;
-        float front_rotations = 0.9F;
+        float turn_angle = 90;
+        float back_rotations = 0.4F;
+        float side_rotations = 1;
+        float front_rotations = 1.5F;
         await moveFrontalRotations(-basespeed, -back_rotations);
         await moveFrontalAngles(turnspeed, turn_angle*c);
         await moveFrontalRotations(basespeed, side_rotations);
         await moveFrontalAngles(turnspeed, turn_angle*-c);
 
+
         await moveFrontalRotations(basespeed, front_rotations);
 
         await moveFrontalAngles(turnspeed, turn_angle*-c);
+        await debug();
         await moveFrontalRotations(basespeed, side_rotations);
         await moveFrontalAngles(turnspeed, turn_angle*c);
 
@@ -535,7 +624,7 @@ void lockRight(bool locked=true) {
 double getDistance(UltrasonicSensor ultra) {
     double distance = ultra.Analog;
     if (distance==-1) { distance = 9999999; }
-    if (ultra.GetHashCode()==ultraUp.GetHashCode()) { distance -= 2; }
+    if (ultra.GetHashCode()==ultraUp.GetHashCode()) { distance -= 1.2; }
     return distance;
 }
 
