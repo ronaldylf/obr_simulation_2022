@@ -19,12 +19,16 @@ Motor handL = new Motor("handLeft");
 MultiMotors two_hands;
 Motor door = new Motor("door");
 
+TouchSensor touchR = Bot.GetComponent<TouchSensor>("touchRight");
+TouchSensor touchM = Bot.GetComponent<TouchSensor>("touchMid");
+TouchSensor touchL = Bot.GetComponent<TouchSensor>("touchLeft");
+
 
 // editable variables ////////////////////////
 double initial_basespeed = 190;
 double initial_baseforce = 220;
 double initial_turnspeed = 200;
-
+double superforce = 500;
 
 // dynamic variables ////////////////////////
 double leftspeed;
@@ -224,6 +228,7 @@ public class MultiMotors {
     public async Task turnDegree(double force, double speed, double degrees=0) {
         double rotations = rotations_per_degree*degrees;
         await together(force, speed, rotations, speed, -rotations);
+        await stop(); await Time.Delay(100);
     }
 }
 
@@ -235,7 +240,7 @@ async Task Main() {
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
     both = new MultiMotors(ref motorL, ref motorR, ref back_motorL, ref back_motorR);
-    both.rotations_per_degree = 0.12;
+    both.rotations_per_degree = 0.08;
     two_hands = new MultiMotors(ref handL, ref handR, ref handL, ref handR);
     two_hands.exclusivity = true;
 
@@ -244,20 +249,16 @@ async Task Main() {
     if (debug_mode) {
         IO.OpenConsole();
         /////
-        await Time.Delay(500);
-        await handOpen();
-        await armUp();
-        await both.together(500, 200); while(getDistance(ultraDown)>1.2) await Time.Delay(50);
-        await both.stop();
-        await grabItem();
+        await both.turnDegree(superforce, basespeed, 90);
         await debug("finished");
         /////////////////
     }
-    
+
     await Time.Delay(500);
     await armUp();
     await handOpen();
     await both.stop();
+    await Time.Delay(500);
 
     while(!isRescue()) {
         await Time.Delay(root_delay);
@@ -267,7 +268,6 @@ async Task Main() {
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
-
 }
 
 async Task MainProcess() {
@@ -275,16 +275,15 @@ async Task MainProcess() {
     // add in green to read all 5 color sensors
     bool has_left_green = isGreen(LeftColorSensor);
     bool has_right_green = isGreen(RightColorSensor);
-    bool has_obstacle = getDistance(ultraUp)<=0.3;
-    bool has_cube = getDistance(ultraDown)<=0.3 && !has_obstacle;
+    bool has_obstacle = getDistance(ultraDown)<=0.3;
+    bool has_cube = getDistance(ultraDown)<=0.3 && !has_obstacle; has_cube=false;
     bool possible_right_crossing = (readLine()=="0 1 1");
     bool possible_left_crossing = (readLine()=="1 1 0");
     bool absolute_crossing = (readLine()=="1 1 1");
-    
 
     if (has_cube) {
         IO.PrintLine("blue cube ahead");
-        await moveFrontalRotations(-basespeed, -0.2f);
+        await both.together(superforce, basespeed, -0.2);
         await grabItem();
     }
 
@@ -297,7 +296,7 @@ async Task MainProcess() {
     
     if (isDownRamp()) {
         IO.Print($"down_ramp: {Bot.Inclination}");
-        basespeed = initial_basespeed*0.5;
+        basespeed = initial_basespeed*0.6;
         return;
     }
 
@@ -307,63 +306,49 @@ async Task MainProcess() {
     if (has_obstacle) {
         IO.PrintLine("obstacle ahead");
         await both.stop();
-        float c = -1F;
-        float turn_angle = 90;
-        float back_rotations = 0.4F;
-        float side_rotations = 1;
-        float front_rotations = 1.5F;
-        await moveFrontalRotations(-basespeed, -back_rotations);
-        await moveFrontalAngles(turnspeed, turn_angle*c);
-        await moveFrontalRotations(basespeed, side_rotations);
-        await moveFrontalAngles(turnspeed, turn_angle*-c);
+        double c = -1;
+        double turn_angle = 90;
+        double back_rotations = 2;
+        double side_rotations = 3.5;
+        double front_rotations = 9;
+        await both.together(superforce, basespeed, -back_rotations);
+        await both.turnDegree(superforce, turnspeed, turn_angle*c);
+        await both.together(superforce, basespeed, side_rotations);
+        await both.turnDegree(superforce, turnspeed, turn_angle*-c);
 
+        await both.together(superforce, basespeed, front_rotations);
 
-        await moveFrontalRotations(basespeed, front_rotations);
-
-        await moveFrontalAngles(turnspeed, turn_angle*-c);
-        await debug();
-        await moveFrontalRotations(basespeed, side_rotations);
-        await moveFrontalAngles(turnspeed, turn_angle*c);
-
-        applyLeft(baseforce, -200);
-        applyRight(baseforce, -200);
-        double start_time = Time.Timestamp;
-        double last_time = 0;
-        double delta_time = 0;
-        while(readFullLine()=="0 0 0 0 0" || delta_time>2) {
-            await Time.Delay(root_delay);
-            last_time = Time.Timestamp;
-            delta_time = last_time - start_time;
-        }
+        await both.turnDegree(superforce, turnspeed, turn_angle*-c);
+        await both.together(superforce, basespeed, side_rotations);
+        await both.turnDegree(superforce, turnspeed, turn_angle*c);
+        await both.together(superforce, -200);
+        while(!touchL.Digital && !touchM.Digital && !touchR.Digital) await Time.Delay(root_delay);
         await both.stop();
         return;
     }
 
     if (has_left_green || has_right_green) {
         IO.PrintLine("possible green");
-        float c = 0F;
+        double c = 0;
         if (has_left_green && has_right_green) {
             // 180 degrees
             IO.PrintLine("180 green");
-            c = 0F;
+            c = 0;
         } else if (has_left_green) {
             IO.PrintLine("left green");
-            c = -1F;
+            c = -1;
         } else if (has_right_green) {
             IO.PrintLine("right green");
-            c = 1F;
+            c = 1;
         }
         await both.stop();
         if (c!=0) {
-            await moveFrontalRotations(basespeed, 0.4F);
-            await moveFrontalAngles(basespeed, (float)(10*c));
-            await SharpCurve(basespeed, (double)c);
-            await moveFrontalRotations(basespeed, 0.2f);
+            await both.together(superforce, basespeed, 0.8);
+            await both.turnDegree(superforce, basespeed, 10*c);
+            await SharpCurve(basespeed, c);
         } else { // 180
-            await moveFrontalAngles(-500, -170F);
-            applyLeft(baseforce, -basespeed);
-            applyRight(baseforce, -basespeed);
-            while (isGap()) {await Time.Delay(50);}
+            await both.turnDegree(superforce, 500, -50);
+            await both.together(superforce, basespeed, -0.5);
         }
         await both.stop();
         return;
@@ -371,116 +356,28 @@ async Task MainProcess() {
 
     if (absolute_crossing) {
         IO.PrintLine("absolute crossing");
-        await moveFrontalRotations(basespeed, 0.33F);
+        await both.together(superforce, basespeed, 0.33);
         return;
     }
 
     if (possible_right_crossing || possible_left_crossing) {
         IO.PrintLine("possible crossing");
-        await moveFrontalRotations(basespeed, 0.3F);
+        await both.together(superforce, basespeed, 0.3);
         await both.stop();
         bool crossing  = !isGap() && readFullLine()!="0 0 0 0 0";
         if (crossing) {
         } else { // 90 degrees
-            float c = 1;
-            if (possible_right_crossing) { c = 1F; }
-            if (possible_left_crossing) { c = -1F; }
+            double c = 1;
+            if (possible_right_crossing) { c = 1; }
+            if (possible_left_crossing) { c = -1; }
             IO.PrintLine($"90 graus: {c}");
-            await SharpCurve(basespeed, (double)c);
+            await SharpCurve(basespeed, c);
         }
         return;
     }
 }
 
-async Task moveFrontalRotations(double speed, float rotations, float read_side=1, float angle_mode=0) {
-    await both.stop(); // problem: robot away from ground and bug motors
-    // IO.Print($"desired_rotations: {rotations}");
-    //await debug($"desired_rotations: {rotations}");
-    double stop_time = 350;
-    Servomotor motor;
-    if (read_side>=0) {
-        motor = motorR.motor;
-    } else {
-        motor = motorL.motor;
-    }
 
-    if (angle_mode==0) {
-        applyRight(baseforce, speed);
-        applyLeft(baseforce, speed);
-    } else if (angle_mode>0) {
-        applyLeft(baseforce, Math.Abs(speed));
-        applyRight(baseforce, -Math.Abs(speed));
-        motor = motorL.motor;
-        
-    } else if (angle_mode<0) {
-        applyRight(baseforce, Math.Abs(speed));
-        applyLeft(baseforce, -Math.Abs(speed));
-        motor = motorR.motor;
-    }
-    motor.Locked = false;
-    
-
-    rotations = (float)Math.Abs(rotations);
-    float accumulated_rotations = 0;
-    float current_rotations = 0;
-    float start_angle = 0;
-    float current_angle = 0;
-    
-    while(true) {
-        current_angle = (float)motor.Angle;
-        if (current_angle>=0) {
-            start_angle = (float)current_angle;
-            while(current_angle>0) {
-                if (speed>0) {
-                    current_rotations = (float)Math.Abs((current_angle - start_angle)/360F);
-                } else {
-                    current_rotations = (float)Math.Abs((start_angle - current_angle)/360F);
-                }
-                
-                //IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
-                if ((accumulated_rotations+current_rotations)>=rotations) { await stop_(stop_time); return; }
-                await Time.Delay(50);
-                current_angle = (float)motor.Angle;
-            }
-        } else {
-            start_angle = (float)current_angle;
-            while(current_angle<0) {
-                if (speed>0) {
-                    current_rotations = (float)Math.Abs((start_angle - current_angle)/360F);
-                } else {
-                    current_rotations = (float)Math.Abs((current_angle - start_angle)/360F);
-                }
-                
-                // IO.Print($"accumulated_rotations: {(accumulated_rotations+current_rotations)}");
-                if ((accumulated_rotations+current_rotations)>=rotations) { await stop_(stop_time); return; }
-                await Time.Delay(50);
-                current_angle = (float)motor.Angle;
-            }
-        }
-        accumulated_rotations += current_rotations;
-        // IO.Print($"accumulated_rotations: {accumulated_rotations}");
-        if (accumulated_rotations>=rotations) { await stop_(stop_time); return; }
-        await Time.Delay(50);
-    }
-}
-
-async Task moveFrontalAngles(double speed, float desired_degrees) {
-    float rotations_per_degree = (float)(0.7F / 90F);
-    float side = getNumberSignal(desired_degrees);
-    float desired_rotations = Math.Abs(rotations_per_degree*desired_degrees);
-    double desired_speed = Math.Abs(speed);
-    desired_speed = 500;
-    await moveFrontalRotations(desired_speed, desired_rotations, -side, side);
-}
-
-float getNumberSignal(float number) {
-    if (number>0) {
-        return 1;
-    } else if (number<0) {
-        return -1;
-    }
-    return 0;
-}
 async Task followLine() {
     switch(readFullLine()) {
         case "0 0 1 0 0":
@@ -563,8 +460,10 @@ string readFullLine() {
 async Task SharpCurve(double speed, double c=1) {
     await both.stop();
     speed = 500;
-    applyRight(baseforce, speed*-c);
-    applyLeft(baseforce, speed*c);
+    await motorR.walk(superforce, speed*-c);
+    await back_motorR.walk(superforce, speed*-c);
+    await motorL.walk(superforce, speed*c);
+    await back_motorL.walk(superforce, speed*c);
     while(true) {
         await Time.Delay(root_delay);
         if (c == -1 && readLine()=="1 0 0") {
@@ -574,21 +473,7 @@ async Task SharpCurve(double speed, double c=1) {
         }
         
     }
-    float new_c = (float)c;
-}
-
-async Task stop_(double stop_delay=250) {
-    P = 0;
-    I = 0;
-    D = 0;
-    last_error = 0;
-    lockRight(true);
-    lockLeft(true);
-    await Time.Delay(stop_delay);
-    lockRight(false);
-    lockLeft(false);
-    applyRight(0, 0);
-    applyLeft(0, 0);
+    await both.stop();
 }
 
 async Task debug(string text="debug here", bool put_text=true) {
@@ -713,44 +598,40 @@ bool isBox() {
 
 async Task adjustFrontDistance(double speed, double desired_distance) {
     await both.stop();
-    while (getDistance(ultraUp)>desired_distance) {
-        await Time.Delay(root_delay);
-        applyRight(baseforce, speed);
-        applyLeft(baseforce, speed);
-    }
+    await both.together(superforce, speed);
+    while (getDistance(ultraUp)>desired_distance) await Time.Delay(root_delay);
     await both.stop();
 }
 
 async Task RescueProcess() {
-    float start_rotations = 1f;
-    float clear_rotations = 0.3f;
-    await moveFrontalRotations(180, start_rotations+clear_rotations);
-    await moveFrontalRotations(-180, -clear_rotations);
+    double start_rotations = 5.5;
+    double clear_rotations = 0.3;
+    await both.together(superforce, 180, start_rotations+clear_rotations);
+    await both.together(superforce, -180, -clear_rotations);
     IO.Print("Inside Rescue Arena");
+    await debug("", false);
 
     while(true) { // loop until find black box
         await Time.Delay(root_delay);
-        applyRight(baseforce, basespeed);
-        applyLeft(baseforce, basespeed);
+        await both.together(superforce, basespeed);
         ////
         if (getDistance(ultraUp)<=10) {
             await both.stop();
-            await moveFrontalAngles(basespeed, 45);
+            await both.turnDegree(superforce, basespeed, 45);
             bool first_confirmation = isBox();
-            await moveFrontalRotations(basespeed, 0.75f);
+            await both.together(superforce, basespeed, 0.75);
             bool second_confirmation = isBox();
 
             if (first_confirmation && second_confirmation) {
-                await moveFrontalAngles(basespeed, 90);
-                applyLeft(baseforce, -200);
-                applyRight(baseforce, -200);
-                await Time.Delay(500);
+                await both.turnDegree(superforce, basespeed, 90);
+                await both.together(superforce, -basespeed);
+                while(!touchL.Digital || !touchM.Digital || !touchR.Digital) await Time.Delay(root_delay);
                 await both.stop();
                 IO.Print("found box");
                 break;
             } else {
                 await adjustFrontDistance(basespeed, 4);
-                await moveFrontalAngles(basespeed, 45);
+                await both.turnDegree(superforce, basespeed, 45);
                 IO.Print("box not found, continuing search");
             }
         }
