@@ -122,6 +122,7 @@ public class Motor {
         motor.Apply(force, speed);
         rotations = Math.Abs(rotations);
         current_angle = getAngle();
+        IO.Print($"angle: {current_angle}");
         if (current_angle>=0) {
             if (start_angle<=0) { start_angle = current_angle; }
             if (speed>0) {
@@ -273,20 +274,16 @@ async Task alignDirection(double value=-1, double margin=45, double anti_inertia
     IO.PrintLine($"direction: {direction} | reading_value:{reading_value}");
     if (reading_value>=smaller && reading_value<=special) { // da esquerda pra direita
         while (Bot.Compass<(special-anti_inertia)) {
+            await moveRight(superforce, -speed);
+            await moveLeft(superforce, speed);
             await Time.Delay(root_delay);
-            await motorR.walk(superforce, -speed);
-            await back_motorR.walk(superforce, -speed);
-            await motorL.walk(superforce, speed);
-            await back_motorL.walk(superforce, speed);
         }
     } else if (reading_value<=larger) { // da direita pra esquerda
         if (direction==0) special = 1;
         while (Bot.Compass>(special+anti_inertia)) {
+            await moveRight(superforce, speed);
+            await moveLeft(superforce, -speed);
             await Time.Delay(root_delay);
-            await motorR.walk(superforce, speed);
-            await back_motorR.walk(superforce, speed);
-            await motorL.walk(superforce, -speed);
-            await back_motorL.walk(superforce, -speed);
         }
     }
 }
@@ -298,18 +295,22 @@ async Task Main() {
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
     both = new MultiMotors(ref motorL, ref motorR, ref back_motorL, ref back_motorR);
-    both.rotations_per_degree = 0.1; //0.1
+    both.rotations_per_degree = 0.1; //0.1 //0.06
     two_hands = new MultiMotors(ref handL, ref handR, ref handL, ref handR);
     two_hands.exclusivity = true;
 
     IO.ClearPrint();
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        await both.together(500, 200, 1);
-        await debug();
+        //await both.together(500, 200, 1);
+        await armUp();
+        await handOpen();
+        await armDown();
+        await handClose();
+        await debug("to nao");
     }
 
-    await Time.Delay(250);
+    await Time.Delay(100);
     await armUp();
     await handOpen();
     both.Lock(false);
@@ -348,15 +349,15 @@ async Task MainProcess() {
     }
 
     if (isUpRamp()) {
-        //IO.Print($"up ramp: {Bot.Inclination}");
+        IO.Print($"up ramp: {Bot.Inclination}");
         baseforce = 500;
-        basespeed = initial_basespeed*1.5;
+        basespeed = initial_basespeed*1; // 1.5
         return;
     }
     
     if (isDownRamp()) {
         IO.Print($"down_ramp: {Bot.Inclination}");
-        basespeed = initial_basespeed*0.6;
+        basespeed = initial_basespeed*1; //0.6
         return;
     }
 
@@ -431,6 +432,11 @@ async Task MainProcess() {
     if (absolute_crossing) {
         IO.PrintLine("absolute crossing");
         await both.together(superforce, basespeed, 0.6);
+        await seekLine(-1, false);
+        if (was_gap) {
+            IO.PrintLine("fake absolute crossing, going back...");
+
+        }
         return;
     }
 
@@ -441,7 +447,7 @@ async Task MainProcess() {
         if (possible_left_crossing) { c = -1; }
 
         await both.together(superforce, basespeed, 0.45);
-        await seekLine(c, false);
+        await seekLine(-c, false);
         bool crossing  = !was_gap;
         if (crossing) {
             IO.PrintLine("false curve, continuing...");
@@ -506,10 +512,8 @@ async Task followLine() {
     PID = P + I + D;
 
     both.Lock(false);
-    await motorR.walk(baseforce, basespeed-PID);
-    await back_motorR.walk(baseforce, basespeed-PID);
-    await motorL.walk(baseforce, basespeed+PID);
-    await back_motorL.walk(baseforce, basespeed+PID);
+    await moveRight(baseforce, basespeed-PID);
+    await moveLeft(baseforce, basespeed+PID);
     
     last_error = error;
 }
@@ -540,17 +544,15 @@ string readFullLine() {
 
 async Task SharpCurve(double speed, double c=1) {
     await both.stop();
-    await motorR.walk(superforce, speed*-c);
-    await back_motorR.walk(superforce, speed*-c);
-    await motorL.walk(superforce, speed*c);
-    await back_motorL.walk(superforce, speed*c);
     while(true) {
-        await Time.Delay(root_delay);
+        await moveRight(superforce, speed*-c);
+        await moveLeft(superforce, speed*c);
         if (c == -1 && readLine()[0]=='1') { // readLine()=="1 0 0"
             break;
         } else if (c == 1 && readLine()[4]=='1') { // readLine()=="0 0 1"
             break;
         }
+        await Time.Delay(root_delay);
     }
 
     while (MidColor.Digital) await Time.Delay(root_delay);
@@ -587,11 +589,9 @@ bool isDownRamp() {
     return inclination>=5 && inclination<=28;
 }
 
+
 bool isGap() {
-    bool gap = true;
-    for (int i=1; i<=10; i++) {
-        gap = (readFullLine()=="0 0 0 0 0" && gap);
-    }
+    bool gap = readFullLine()=="0 0 0 0 0";
     was_gap = gap;
     return gap;
 }
@@ -601,12 +601,12 @@ bool isRescue() {
     return (reading.Blue>reading.Red && reading.Blue>reading.Green);
 }
 
-async Task openBag(double c=1, double time=1000) {
-    bag.Lock(false);
-    double speed = 100;
-    await bag.walk(500, speed*-c);
-    await Time.Delay(time);
-    bag.Lock(true);
+async Task openBag(double c=1, double rotations=0.5) {
+    bag.Lock(false); both.Lock(true);
+    const double force = 500;
+    const double speed = 300;
+    await bag.walk(force, speed, rotations*c, true);
+    bag.Lock(true); both.Lock(false);
 }
 
 async Task closeBag() {
@@ -614,37 +614,46 @@ async Task closeBag() {
 }
 
 async Task grabItem() {
-    await both.stop();
     await armDown();
     IO.Print("abaixou a garra");
     await Time.Delay(500);
-    await handClose(1.2);
+    await handClose();
     IO.Print("fechou a mão");
     await armUp();
     await handOpen();
 }
 
-async Task armUp(double c=1, double speed=100) {
-    // both.Lock(true);
-    // await arm.walk(500, speed*c);
-    // await Time.Delay(2500); // 2000
-    // arm.Lock(true);
-    // await both.stop();
+async Task armUp(double c=1, double rotations=4.5) {
+    arm.Lock(false); both.Lock(true);
+    const double force = 500;
+    const double speed = 160;
+    await arm.walk(force, speed, rotations*c, true);
+    arm.Lock(true); both.Lock(false);
 }
 
-async Task armDown(double c=1) {
-    await armUp(-Math.Abs(c));
+async Task armDown() {
+    await armUp(-1);
 }
 
-async Task handOpen(double c=1, double speed=100) {
-    // double rotations = 3;
-    // both.Lock(true);
-    // await two_hands.together(500, speed, rotations*c, speed, -rotations*c);
-    // await both.stop();
+async Task handOpen(double c=1, double rotations=1) {
+    // two_hands.Lock(false); both.Lock(true);
+    // const double force = 500;
+    // const double speed = 150;
+    // await two_hands.together(force, speed, rotations*-c);
+    // two_hands.Lock(true); both.Lock(false);
+
+
+    Motor hand = new Motor("hand");
+
+    hand.Lock(false); both.Lock(true);
+    const double force = 500;
+    const double speed = 150;
+    await hand.walk(force, speed, rotations*-c);
+    hand.Lock(true); both.Lock(false);
 }
 
-async Task handClose(double c=1) {
-    await handOpen(-Math.Abs(c));
+async Task handClose() {
+    await handOpen(-1);
 }
 
 
@@ -666,7 +675,11 @@ bool isBox() {
 
 async Task adjustFrontDistance(double force, double speed, double desired_distance, bool must_stop=true) {
     await both.together(force, speed);
-    while (getDistance(ultraMid)>desired_distance) await Time.Delay(root_delay);
+    // while (getDistance(ultraMid)>desired_distance) await Time.Delay(root_delay);
+    while (getDistance(ultraMid)>desired_distance) {
+        await Time.Delay(root_delay);
+        IO.Print($"distance: {getDistance(ultraMid)}");
+    }
     if (must_stop) await both.stop();
 }
 
@@ -689,25 +702,20 @@ async Task seekLine(double init_action=-1, bool both_sides=true, double base_tim
     // goes for one side
     while ((millis()-init_time)<base_time) {
         await Time.Delay(root_delay);
-        await motorR.walk(superforce, speed*-init_action);
-        await back_motorR.walk(superforce, speed*-init_action);
-        await motorL.walk(superforce, speed*init_action);
-        await back_motorL.walk(superforce, speed*init_action);
+        await moveRight(superforce, speed*-init_action);
+        await moveLeft(superforce, speed*init_action);
         if (!isGap()) { await both.stop(); return; }
     }
     await both.stop();
 
     if (!both_sides) return;
 
-
     init_time = millis();
     // goes for the other side
     while ((millis()-init_time)<base_time*0.5d) {
         await Time.Delay(root_delay);
-        await motorR.walk(superforce, speed*init_action);
-        await back_motorR.walk(superforce, speed*init_action);
-        await motorL.walk(superforce, speed*-init_action);
-        await back_motorL.walk(superforce, speed*-init_action);
+        await moveRight(superforce, speed*init_action);
+        await moveLeft(superforce, speed*-init_action);
         if (!isGap()) { await both.stop(); return; }
     }
     await both.stop();
@@ -716,13 +724,21 @@ async Task seekLine(double init_action=-1, bool both_sides=true, double base_tim
     init_time = millis();
     while ((millis()-init_time)<base_time*0.35d) {
         await Time.Delay(root_delay);
-        await motorR.walk(superforce, speed*-init_action);
-        await back_motorR.walk(superforce, speed*-init_action);
-        await motorL.walk(superforce, speed*init_action);
-        await back_motorL.walk(superforce, speed*init_action);
+        await moveRight(superforce, speed*-init_action);
+        await moveLeft(superforce, speed*init_action);
     }
     was_gap = true;
     await both.stop();
+}
+
+async Task moveLeft(double force, double speed) {
+    await motorL.walk(force, speed);
+    await back_motorL.walk(force, speed);
+}
+
+async Task moveRight(double force, double speed) {
+    await motorR.walk(force, speed);
+    await back_motorR.walk(force, speed);
 }
 
 async Task RescueProcess() {
@@ -744,14 +760,15 @@ async Task RescueProcess() {
 
 
     await both.turnDegree(500, basespeed, 45);
-    await adjustFrontDistance(baseforce, basespeed, 10);
+    await both.together(500, basespeed, 6); //await adjustFrontDistance(baseforce, basespeed, 10);
     await both.turnDegree(baseforce, basespeed, 95);
     await alignBack();
     await both.together(baseforce, basespeed, 0.3);
     await both.stop();
+    both.Lock(true);
     IO.Print("descendo braço");
     await armDown();
-    IO.Print("soltando cubo");
+    IO.Print("abrindo mochila");
     await openBag();
     IO.Print("abriu");
     await closeBag();
