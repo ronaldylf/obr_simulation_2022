@@ -122,7 +122,7 @@ public class Motor {
         motor.Apply(force, speed);
         rotations = Math.Abs(rotations);
         current_angle = getAngle();
-        IO.Print($"angle: {current_angle}");
+        //IO.Print($"angle: {current_angle}");
         if (current_angle>=0) {
             if (start_angle<=0) { start_angle = current_angle; }
             if (speed>0) {
@@ -295,37 +295,44 @@ async Task Main() {
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
     both = new MultiMotors(ref motorL, ref motorR, ref back_motorL, ref back_motorR);
-    both.rotations_per_degree = 0.1; //0.1 //0.06
+    both.rotations_per_degree = 0.15; //0.1 //0.06
     two_hands = new MultiMotors(ref handL, ref handR, ref handL, ref handR);
     two_hands.exclusivity = true;
 
     IO.ClearPrint();
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        //await both.together(500, 200, 1);
-        await armUp();
-        await handOpen();
-        await armDown();
-        await handClose();
+        while(true) {
+            await Time.Delay(root_delay);
+            IO.PrintLine("abrindo...");
+            await openBag();
+            IO.PrintLine("ABRIU");
+            await Time.Delay(1000);
+            IO.PrintLine("fechando...");
+            await closeBag();
+            IO.PrintLine("FECHOU");
+            await Time.Delay(1000);
+        }
+        
         await debug("to nao");
     }
 
-    await Time.Delay(100);
     await armUp();
     await handOpen();
+    await Time.Delay(300);
     both.Lock(false);
     while(isGap()) {
         await seekLine();
         if (!was_gap) { break; }
-        await both.together(superforce, basespeed, -5);
-        await debug(); // TEST HERE
+        await both.together(superforce, basespeed, -10);
+        await Time.Delay(root_delay);
     }
-    
 
     while(!isRescue()) {
         await Time.Delay(root_delay);
         await MainProcess();
     }
+
     await RescueProcess();
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
@@ -357,7 +364,7 @@ async Task MainProcess() {
     
     if (isDownRamp()) {
         IO.Print($"down_ramp: {Bot.Inclination}");
-        basespeed = initial_basespeed*1; //0.6
+        basespeed = initial_basespeed*0.6; //0.6
         return;
     }
 
@@ -581,12 +588,12 @@ double getDistance(UltrasonicSensor ultra) {
 
 bool isUpRamp() {
     double inclination = Bot.Inclination;
-    return inclination>=30 && inclination<=350;
+    return inclination>35 && inclination<=350;
 }
 
 bool isDownRamp() {
     double inclination = Bot.Inclination;
-    return inclination>=5 && inclination<=28;
+    return inclination>=5 && inclination<=35;
 }
 
 
@@ -601,7 +608,7 @@ bool isRescue() {
     return (reading.Blue>reading.Red && reading.Blue>reading.Green);
 }
 
-async Task openBag(double c=1, double rotations=0.5) {
+async Task openBag(double c=1, double rotations=1) {
     bag.Lock(false); both.Lock(true);
     const double force = 500;
     const double speed = 300;
@@ -609,7 +616,7 @@ async Task openBag(double c=1, double rotations=0.5) {
     bag.Lock(true); both.Lock(false);
 }
 
-async Task closeBag() {
+async Task closeBag(double c=-1) {
     await openBag(-1);
 }
 
@@ -623,33 +630,33 @@ async Task grabItem() {
     await handOpen();
 }
 
-async Task armUp(double c=1, double rotations=4.5) {
+async Task armUp(double c=1) {
+    const double rotations = 8;
     arm.Lock(false); both.Lock(true);
     const double force = 500;
-    const double speed = 160;
+    const double speed = 100;
     await arm.walk(force, speed, rotations*c, true);
     arm.Lock(true); both.Lock(false);
 }
 
 async Task armDown() {
-    await armUp(-1);
+    await armUp(-0.9);
 }
 
-async Task handOpen(double c=1, double rotations=1) {
+async Task handOpen(double c=1, double rotations=0.3) {
     // two_hands.Lock(false); both.Lock(true);
     // const double force = 500;
-    // const double speed = 150;
+    // const double speed = 100;
     // await two_hands.together(force, speed, rotations*-c);
     // two_hands.Lock(true); both.Lock(false);
 
 
-    Motor hand = new Motor("hand");
-
-    hand.Lock(false); both.Lock(true);
-    const double force = 500;
-    const double speed = 150;
-    await hand.walk(force, speed, rotations*-c);
-    hand.Lock(true); both.Lock(false);
+    //Motor hand = new Motor("hand");
+    //hand.Lock(false); both.Lock(true);
+    //const double force = 500;
+    //const double speed = 150;
+    //await hand.walk(force, speed, rotations*-c);
+    //hand.Lock(true); both.Lock(false);
 }
 
 async Task handClose() {
