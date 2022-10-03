@@ -96,8 +96,8 @@ public class Motor {
         } else {
             stopCounting();
             can_run = true;
+            reset();
             startCounting();
-            Lock(false);
             ulong init_time = millis();
             while(can_run) {
                 await Time.Delay(root_delay);
@@ -108,12 +108,13 @@ public class Motor {
                 }
             }
             stopCounting();
+            reset();
             if (block) {
                 Lock(true);
             } else {
                 await stop();
             }
-            reset();
+            
         }
     }
 
@@ -178,11 +179,11 @@ public class Motor {
         } else {
             can_run = (amount>rotations);
         }
-        //IO.Print($@" motor: {name}
-        //rotations:{amount}
-        //can_run:{can_run}
-        //angle: {getAngle()}
-        //");
+        IO.Print($@" motor: {name}
+        angle: {getAngle()}
+        rotations:{amount}
+        can_run:{can_run}
+        ");
     }
 
     ulong millis(){
@@ -347,8 +348,9 @@ async Task Main() {
     IO.ClearPrint();
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        await both.turnDegree(500, 200, -90);
-        await Time.Delay(10000);
+        await armUp();
+        await handOpen();
+        await debug();
     }
     await armUp();
     await handOpen();
@@ -423,7 +425,7 @@ async Task MainProcess() {
         double c = -1;
         double turn_angle = 90;
         double back_rotations = 0;
-        double side_rotations = 0.8;
+        double side_rotations = 0.75;
         double front_rotations = 1.8;
         IO.Print("going back");
         await both.together(superforce, basespeed, -back_rotations);
@@ -627,7 +629,7 @@ async Task debug(string text="") {
 
 double getDistance(UltrasonicSensor ultra) {
     double distance = ultra.Analog;
-    if (distance==-1) { distance = 999; }
+    if (distance==-1) { distance = 999+0.3; }
     if (ultra.GetHashCode() == ultra.GetHashCode()) distance -= 0.3;
     return (distance);
 }
@@ -661,7 +663,7 @@ async Task openBag(double c=1, double rotations=1.5) {
     IO.PrintLine("abrindo/fechando mochila...");
     both.Lock(true); bag.Lock(false); 
     const double force = 400; //400
-    const double speed = 250; //150
+    const double speed = 300; //150
     await bag.walk(force, speed, rotations*c, true);
     bag.Lock(true); both.Lock(false);
     IO.PrintLine("mochila aberta/fechada");
@@ -825,18 +827,23 @@ async Task RescueProcess() {
         await Time.Delay(root_delay);
         last_distance = getDistance(ultraMid);
         IO.PrintLine($"last_distance: {last_distance}");
-        if (last_distance>900) {
-            while(!hasSomeGreen()) {
-                await both.together(baseforce, basespeed);
-                await Time.Delay(root_delay);
+        
+        while(true) {
+            await Time.Delay(root_delay);
+            await both.together(baseforce, basespeed);
+            if (getDistance(ultraMid)<10) {
+                if(isBox()) break;
+                await adjustFrontDistance(baseforce, basespeed, 4, true);
+                break;
+            } else if(hasSomeGreen()) {
+                await both.stop();
+                await both.together(baseforce, basespeed, -0.2);
+                break;
             }
-            await both.stop();
-            await both.together(baseforce, basespeed, -0.2);
-        } else {
-            await adjustFrontDistance(baseforce, basespeed, 10, false);
-            if(isBox()) break;
-            await adjustFrontDistance(baseforce, basespeed, 4, true);
         }
+
+        if(isBox()) break;
+
         await both.turnDegree(baseforce, turnspeed, 90*main_side);
         await alignDirection();
     }
