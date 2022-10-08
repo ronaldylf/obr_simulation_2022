@@ -875,13 +875,14 @@ async Task reachWall(double minimum_distance=4, double max_rotations=0.2) {
     }
 }
 
-async Task deliverItem(double c=1) {
+async Task deliverItem(double c=1, double rot_after_align=0) {
     await both.stop();
     await both.turnDegree(baseforce, basespeed, 45*c);
     await both.together(baseforce, basespeed, 0.6);
 
     await both.turnDegree(baseforce, basespeed, 90*c);
     await alignBack();
+    await both.together(baseforce, basespeed, Math.Abs(rot_after_align));
     handClose();
     await armDown();
     await openBag();
@@ -969,7 +970,8 @@ async Task RescueProcess() {
     await alignDirection();
     await adjustFrontDistance(baseforce, basespeed, 10.1);
 
-    await deliverItem();
+    await deliverItem(-c, 0.2);
+    await alignBack();
 
     IO.PrintLine("end of rescue");
     await debug();
