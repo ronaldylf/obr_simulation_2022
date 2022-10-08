@@ -49,6 +49,7 @@ double turnspeed;
 bool is_arm_up = true;
 const double root_delay = 50;
 bool was_gap = false;
+bool had_green = false;
 
 // for PID line follower:
 int error = 0, last_error = 0;
@@ -179,11 +180,11 @@ public class Motor {
         } else {
             can_run = (amount>rotations);
         }
-        IO.Print($@" motor: {name}
-        angle: {getAngle()}
-        rotations:{amount}
-        can_run:{can_run}
-        ");
+        //IO.Print($@" motor: {name}
+        //angle: {getAngle()}
+        //rotations:{amount}
+        //can_run:{can_run}
+        //");
     }
 
     ulong millis(){
@@ -287,7 +288,7 @@ public class MultiMotors {
     public async Task turnDegree(double force, double speed, double degrees=0) {
         double rotations = rotations_per_degree*degrees;
         await together(force, speed, rotations, speed, -rotations);
-        await stop();
+        await stop(200);
     }
 }
 
@@ -341,21 +342,20 @@ async Task Main() {
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
     both = new MultiMotors(ref motorL, ref motorR, ref back_motorL, ref back_motorR);
-    both.rotations_per_degree = (1d / 90d);
+    both.rotations_per_degree = (0.9d / 90d);
     two_hands = new MultiMotors(ref handL, ref handR, ref handL, ref handR);
     two_hands.exclusivity = true;
 
     IO.ClearPrint();
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        await armUp();
-        await handOpen();
-        await debug();
+
     }
     await armUp();
     await handOpen();
     await Time.Delay(300);
     both.Lock(false);
+    await both.together(baseforce, basespeed, 0.3);
     while(isGap()) {
         await seekLine();
         if (!was_gap) { break; }
@@ -659,18 +659,32 @@ bool isOver() {
     return isRed(MidColor);
 }
 
-async Task openBag(double c=1, double rotations=1.5) {
-    IO.PrintLine("abrindo/fechando mochila...");
-    both.Lock(true); bag.Lock(false); 
-    const double force = 400; //400
-    const double speed = 300; //150
-    await bag.walk(force, speed, rotations*c, true);
+async Task openBag(double c=1, double rotations=0.5) {
+    // IO.PrintLine("abrindo/fechando mochila...");
+    // both.Lock(true); bag.Lock(false); 
+    // const double force = 400; //400
+    // const double speed = 300; //150
+    // await bag.walk(force, speed, rotations*c, true);
+    // bag.Lock(true); both.Lock(false);
+    // IO.PrintLine("mochila aberta/fechada");
+    await moveBagDelay(500, 500, 400);
+}
+
+async Task moveBagDelay(double force, double speed, double time) {
+    IO.PrintLine("tentando mexer a MOCHILA por delay...");
+    both.Lock(true); bag.Lock(false);
+    ulong t0 = millis();
+    while((millis()-t0)<time) {
+        await Time.Delay(root_delay);
+        await bag.walk(force, speed);
+    }
     bag.Lock(true); both.Lock(false);
-    IO.PrintLine("mochila aberta/fechada");
+    IO.PrintLine("moveu a MOCHILA por delay");
 }
 
 async Task closeBag() {
-    await openBag(-1);
+    //await openBag(-1);
+    await moveBagDelay(500, -500, 850);
 }
 
 async Task grabItem() {
@@ -680,23 +694,50 @@ async Task grabItem() {
     await handOpen();
 }
 
+async Task moveArmDelay(double force, double speed, double time) {
+    IO.PrintLine("tentando mexer o braço por delay...");
+    both.Lock(true); arm.Lock(false);
+    ulong t0 = millis();
+    while((millis()-t0)<time) {
+        await Time.Delay(root_delay);
+        await arm.walk(force, speed);
+    }
+    arm.Lock(true); both.Lock(false);
+    IO.PrintLine("moveu o braço por delay");
+}
+
+async Task moveHandDelay(double force, double speed, double time) {
+    IO.PrintLine("tentando mexer a mão por delay...");
+    both.Lock(true); hand.Lock(false);
+    ulong t0 = millis();
+    while((millis()-t0)<time) {
+        await Time.Delay(root_delay);
+        await hand.walk(force, speed);
+    }
+    hand.Lock(true); both.Lock(false);
+    IO.PrintLine("moveu o braço por delay");
+}
+
 async Task armUp() {
-    await moveArm(500, 200, 190);
+    await moveArm(500, 150, 180);
+    //await moveArmDelay(500, 100, 5000);
 }
 
 async Task armDown() {
-    await moveArm(500, 200, -190);
+   await moveArm(500, 150, -180);
 }
 
 async Task handOpen() {
-    await moveHand(500, 100, 50);
+    //await moveHand(500, 250, 45);
+    await moveHandDelay(500, 230, 500);
 }
 
 async Task handClose() {
-    await moveHand(500, 100, -25);
+    //await moveHand(500, 120, -25);
+    await moveHandDelay(500, -230, 700);
 }
 
-async Task moveArm(double force, double speed, double angle, double timeout=10000) {
+async Task moveArm(double force, double speed, double angle, double timeout=4000) {
     IO.PrintLine("tentando mexer o braço...");
     both.Lock(true); arm.Lock(false); 
     arm.timeout = timeout;
@@ -741,16 +782,25 @@ bool cube_taken(){
 }
 async Task adjustFrontDistance(double force, double speed, double desired_distance, bool must_stop=true) {
     while (getDistance(ultraMid)>desired_distance) {
-        await Time.Delay(root_delay);
         await both.together(force, speed);
+        await Time.Delay(root_delay);
         //IO.Print($"adjusting distance: {getDistance(ultraMid)}");
+    }
+    if (must_stop) await both.stop();
+}
+
+async Task adjustDownDistance(double force, double speed, double desired_distance, bool must_stop=true) {
+    while (getDistance(ultraDown)>desired_distance) {
+        await both.together(force, speed);
+        await Time.Delay(root_delay);
+        //IO.Print($"adjusting distance: {getDistance(ultraDown)}");
     }
     if (must_stop) await both.stop();
 }
 
 async Task alignBack(double force=500, double speed=300) {
     while(!hasTouched()) {
-        await both.together(force, -speed);
+        await both.together(force, -Math.Abs(speed));
         await Time.Delay(root_delay);
     }
     await both.stop();
@@ -812,6 +862,34 @@ async Task moveRight(double force, double speed) {
     await back_motorR.walk(force, speed);
 }
 
+async Task reachWall(double minimum_distance=4, double max_rotations=0.2) {
+    had_green = false;
+    while(getDistance(ultraMid)>minimum_distance && !had_green) {
+        await both.together(baseforce, basespeed);
+        await Time.Delay(root_delay);
+        had_green = hasSomeGreen();
+    }
+    await both.stop();
+    if (had_green) {
+        await both.together(baseforce, basespeed, -Math.Abs(max_rotations));
+    }
+}
+
+async Task deliverItem(double c=1) {
+    await both.stop();
+    await both.turnDegree(baseforce, basespeed, 45*c);
+    await both.together(baseforce, basespeed, 0.6);
+
+    await both.turnDegree(baseforce, basespeed, 90*c);
+    await alignBack();
+    handClose();
+    await armDown();
+    await openBag();
+    await closeBag();
+    handOpen();
+    await armUp();
+    IO.PrintLine("ITEM talvez resgatado");
+}
 
 async Task RescueProcess() {
     IO.Print("Inside Rescue Arena");
@@ -848,16 +926,52 @@ async Task RescueProcess() {
         await alignDirection();
     }
 
-    await both.stop();
-    await both.turnDegree(baseforce, basespeed, 45*main_side);
-    await adjustFrontDistance(baseforce, basespeed, 12);
-    await both.turnDegree(baseforce, basespeed, 90*main_side);
-    await alignBack();
-    await armDown();
-    await openBag();
-    await closeBag();
-    IO.PrintLine("cubo talvez resgatado");
+    // check the state of arena
+    bool is_up = (last_distance>50); // em pe
+    bool is_down = (last_distance<50); // deitada
+    IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
+    await deliverItem(main_side);
+    await both.together(baseforce, basespeed, 0.2);
+
+    double c;
+    UltrasonicSensor ultraSide;
+    if (is_up) {
+        c = 1;
+        ultraSide = ultraRight;
+    } else { // is_down
+        c = -1;
+        ultraSide = ultraLeft;
+    }
+
+    await both.turnDegree(baseforce, basespeed, 45*-c);
+    await alignDirection();
+    await both.turnDegree(baseforce, basespeed, 45*-c);
+    await reachWall();
+    await both.turnDegree(baseforce, basespeed, 45*c);
+    await alignDirection();
+    last_distance = 999;
+    while(last_distance==999) { // adicionar aqui, ou chegar no fim da linha
+        await Time.Delay(root_delay);
+        await both.together(500, 200);
+        last_distance = getDistance(ultraSide);
+    }
+    await both.stop(100);
+    await both.turnDegree(baseforce, basespeed, 90*c);
+
+    const double rot_per_zm = (2d / 8.4d);
+    double rot_to_victim = last_distance*rot_per_zm;
+    await both.together(baseforce, basespeed, rot_to_victim);
+    await grabItem(); // get victim
+    await both.together(baseforce, basespeed, -rot_to_victim);
+    await alignDirection();
+    await both.turnDegree(baseforce, basespeed, 90*c);
+    await alignDirection();
+    await adjustFrontDistance(baseforce, basespeed, 10.1);
+
+    await deliverItem();
+
+    IO.PrintLine("end of rescue");
     await debug();
 }
 
