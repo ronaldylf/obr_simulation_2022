@@ -78,9 +78,9 @@ public class Motor {
     }
 
     public async Task stop(double time=50) {
+        await walk(0, 0);
         Lock(true);
         await Time.Delay(time);
-        await walk(500, 0);
         Lock(false);
     }
     
@@ -218,9 +218,9 @@ public class MultiMotors {
     }
 
     public async Task stop(double time=50) {
+        await together(0, 0);
         Lock(true);
         await Time.Delay(time);
-        await together(500, 0);
         Lock(false);
     }
 
@@ -358,10 +358,10 @@ async Task Main() {
     }
     await armUp();
     await handOpen();
-    await Time.Delay(300);
     both.Lock(false);
+    await Time.Delay(300);
     await both.together(baseforce, basespeed, 0.3);
-    while(isGap()) {
+    while(isGap() && !isRescue()) {
         await seekLine();
         if (!was_gap) { break; }
         await both.together(superforce, basespeed, -10);
@@ -381,8 +381,8 @@ async Task Main() {
 
 async Task MainProcess() {
     await followLine();
-    bool has_left_green = (isGreen(LeftColor) || isGreen(ExtremeLeftColor)) || (isGreen(RightColor) && isGreen(ExtremeRightColor) && isGreen(MidColor));
-    bool has_right_green = (isGreen(RightColor) || isGreen(ExtremeRightColor)) || (isGreen(LeftColor) && isGreen(ExtremeLeftColor) && isGreen(MidColor));
+    bool has_left_green = (isGreen(LeftColor) || isGreen(ExtremeLeftColor)) || (isGreen(RightColor) && isGreen(ExtremeRightColor) && isGreen(MidColor, 0.95d));
+    bool has_right_green = (isGreen(RightColor) || isGreen(ExtremeRightColor)) || (isGreen(LeftColor) && isGreen(ExtremeLeftColor) && isGreen(MidColor, 0.95d));
     bool has_obstacle = getDistance(ultraMid) <= 0.8 &&  getDistance(ultraDown) <= 2;
     bool has_cube = getDistance(ultraDown)<=0.8 && !has_obstacle && getDistance(ultraMid) >= 6;
     bool possible_right_crossing = (readLine()=="0 1 1");
@@ -433,12 +433,14 @@ async Task MainProcess() {
         await alignDirection();
         double c = -1;
         double turn_angle = 90;
-        double back_rotations = 0;
-        double side_rotations = 0.75;
-        double front_rotations = 1.8;
+        double back_rotations = 0.5;
+        double side_rotations = 1;
+        double last_rotations = 0.3;
+        double front_rotations = 2.6;
         IO.Print("going back");
         await both.together(superforce, basespeed, -back_rotations);
         await both.stop();
+        if (getDistance(ultraLeft)<10) c = 1;
         await both.turnDegree(superforce, turnspeed, turn_angle*c);
         await alignDirection();
         await both.together(superforce, basespeed, side_rotations);
@@ -447,12 +449,18 @@ async Task MainProcess() {
         await both.together(superforce, basespeed, front_rotations);
         await both.turnDegree(superforce, turnspeed, turn_angle*-c);
         await alignDirection();
-        await both.together(superforce, basespeed, side_rotations);
+        while(isGap()) {
+            await both.together(superforce, basespeed);
+            await Time.Delay(root_delay);
+        }
+        await both.stop();
+        await both.together(superforce, basespeed, last_rotations);
         await both.turnDegree(superforce, turnspeed, turn_angle*c);
         await alignDirection();
         await both.together(superforce, -200);
         while(!touchL.Digital && !touchM.Digital && !touchR.Digital) await Time.Delay(root_delay);
         await both.stop();
+        await seekLine();
         return;
     }
 
@@ -479,8 +487,10 @@ async Task MainProcess() {
         } else { // 180 green
             IO.PrintLine("180 green");
             await both.together(superforce, basespeed, -0.1);
-            await both.turnDegree(superforce, 500, -180);
+            await both.turnDegree(superforce, 500, -210);
             await both.together(superforce, basespeed, -0.1);
+            await alignDirection();
+            await seekLine();
         }
         while (hasSomeGreen()) {
             await both.together(500, 100);
@@ -661,7 +671,7 @@ bool isGap() {
 }
 
 bool isRescue() {
-    return (isBlue(LeftColor) || isBlue(MidColor) || isBlue(RightColor));
+    return isBlue(MidColor);
 }
 
 bool isOver() {
@@ -694,7 +704,7 @@ async Task moveBagDelay(double force, double speed, double time) {
 
 async Task closeBag() {
     //await openBag(-1);
-    await moveBagDelay(500, -300, 700);
+    await moveBagDelay(500, -400, 700); // (500, -300, 700)
 }
 
 async Task grabItem() {
@@ -744,7 +754,7 @@ async Task handOpen() {
 
 async Task handClose() {
     //await moveHand(500, 120, -25);
-    await moveHandDelay(500, -230, 800);
+    await moveHandDelay(500, -230, 850);
 }
 
 async Task moveArm(double force, double speed, double angle, double timeout=4000) {
@@ -899,16 +909,17 @@ async Task reachWall(double minimum_distance=4, double max_rotations=0.2) {
     }
 }
 
-async Task deliverItem(double c=1, double rot_after_align=0.2) {
+async Task deliverItem(double c=1, double rot_after_align=0) {
     await both.stop();
     await both.turnDegree(baseforce, basespeed, 45*c);
     await both.together(baseforce, basespeed, 0.7);
 
     await both.turnDegree(baseforce, basespeed, 90*c);
     await alignBack();
-    await both.together(baseforce, basespeed, Math.Abs(rot_after_align));
+    if(rot_after_align!=0) await both.together(baseforce, 60, Math.Abs(rot_after_align));
     handClose();
     await armDown();
+    await Time.Delay(100);
     await openBag();
     await closeBag();
     
@@ -919,17 +930,19 @@ async Task deliverItem(double c=1, double rot_after_align=0.2) {
 }
 
 async Task RescueProcess() {
-    IO.Print("Inside Rescue Arena");
+    IO.ClearPrint();
+    IO.PrintLine("Inside Rescue Arena");
     baseforce = 500;
     basespeed = 200;
     turnspeed = 400;
     await alignDirection();
     await both.together(baseforce, basespeed, 1.5);
+    await both.stop(300); //await Time.Delay(root_delay);
     double last_distance;
     double main_side = (getDistance(ultraRight) > getDistance(ultraLeft)) ? 1 : -1;
     IO.PrintLine($"main_side: {main_side}");
     while(true) { // loop until find black box
-        await Time.Delay(root_delay);
+        await both.stop(300); //await Time.Delay(root_delay);
         last_distance = getDistance(ultraMid);
         IO.PrintLine($"last_distance: {last_distance}");
         
@@ -970,45 +983,75 @@ async Task RescueProcess() {
         c = -1;
         ultraSide = ultraLeft;
     }
-
+    IO.PrintLine($"c={c}");
+    await both.turnDegree(baseforce, turnspeed, 45*-c);
+    await alignDirection();
+    await both.turnDegree(baseforce, turnspeed, 45*-c);
+    await reachWall(4.5);
+    await both.turnDegree(baseforce, turnspeed, 45*c);
+    await alignDirection();
+    bool must_deliver = false;
     while(true) {
-        await both.turnDegree(baseforce, turnspeed, 45*-c);
-        await alignDirection();
-        await both.turnDegree(baseforce, turnspeed, 45*-c);
-        await reachWall(4.5);  // quando tá na distancia minima a roda bate na parede
-        await both.turnDegree(baseforce, turnspeed, 45*c);
-        await alignDirection();
         last_distance = 999;
-        while(last_distance==999) { // adicionar aqui, ou chegar no fim da linha
+        while(last_distance==999 && !must_deliver) { // adicionar aqui, ou chegar no fim da linha
             await Time.Delay(root_delay);
             await both.together(500, 200);
             last_distance = getDistance(ultraSide);
+            must_deliver = hasSomeGreen() || getDistance(ultraMid)<4 || isRescue();
+            if (hasSomeGreen() || isRescue()) {
+                await both.stop();
+                await both.together(baseforce, basespeed, -0.35);
+            }
         }
+        if (must_deliver) break;
         await both.stop(100);
-        await both.turnDegree(baseforce, turnspeed, 90*c);
-        await alignDirection();
-
-        const double rot_per_zm = (2d / 8.4d);
-        double rot_to_victim = last_distance*rot_per_zm*0.95d;
-        await both.together(baseforce, basespeed, rot_to_victim);
-        await grabItem(); // get victim
-        //if (!victimTaken()){
-        // mover pro lado e pro outro até que o ultraDown veja algo
-        // se tiver longe anda um pouquinho
-        // grab item
-        // nn sei programar
-        //    await grabItem();
-        //}
+        // primeira maneira: com base na relacao rotacoes/distancia:
+        //await both.turnDegree(baseforce, turnspeed, 90*c);
+        //await alignDirection();
+        //const double rot_per_zm = (2d / 8.4d);
+        //double rot_to_victim = last_distance*rot_per_zm*0.95d;
+        //await both.together(baseforce, basespeed, rot_to_victim);
+        //await grabItem(); // get victim
+        //await Time.Delay(200);
+        //await both.together(baseforce, basespeed, -rot_to_victim);
         
-        await both.together(baseforce, basespeed, -rot_to_victim);
-        await alignDirection();
-        await both.turnDegree(baseforce, turnspeed, 90*c);
-        await alignDirection();
-        await adjustFrontDistance(baseforce, basespeed, 10.1);
-        await deliverItem(-c);
-        await Time.Delay(300);
+        // segunda maneira:
+        await both.turnDegree(baseforce, turnspeed, 110*c);
+        while(getDistance(ultraDown)==999) {
+            await moveRight(baseforce, basespeed*c);
+            await moveLeft(baseforce, basespeed*-c);
+            await Time.Delay(root_delay);
+        }
+        await both.stop();
 
+        ulong time_to_victim = millis();
+        while (getDistance(ultraDown)>1.4d) {
+            await both.together(baseforce, basespeed);
+            await Time.Delay(root_delay);
+        }
+        time_to_victim = millis() - time_to_victim;
+        await both.stop(100);
+        await grabItem(); // get victim
+        await Time.Delay(200);
+        // go back
+        await both.together(baseforce, -basespeed);
+        await Time.Delay(time_to_victim);
+
+        await alignDirection();
+        await both.turnDegree(baseforce, turnspeed, 90*-c);
+        await alignDirection();
         IO.PrintLine("end of a cycle");
     }
+    await both.turnDegree(baseforce, turnspeed, 90*c);
+    await alignDirection();
+    await both.turnDegree(baseforce, turnspeed, 90*c);
+    await alignDirection();
+    
+    await adjustFrontDistance(baseforce, basespeed, 10.1);
+    await deliverItem(-c);
+    await Time.Delay(300);
+
+    IO.PrintLine("end of rescue");
+    await debug();
 }
 
