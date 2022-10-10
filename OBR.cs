@@ -377,6 +377,11 @@ async Task Main() {
     basespeed = initial_basespeed;
     baseforce = initial_baseforce;
     turnspeed = initial_turnspeed;
+
+    while(true) {
+        await MainProcess();
+        await Time.Delay(root_delay);
+    }
 }
 
 async Task MainProcess() {
@@ -942,7 +947,8 @@ async Task RescueProcess() {
     double main_side = (getDistance(ultraRight) > getDistance(ultraLeft)) ? 1 : -1;
     IO.PrintLine($"main_side: {main_side}");
     while(true) { // loop until find black box
-        await both.stop(300); //await Time.Delay(root_delay);
+        await both.stop(); //await Time.Delay(root_delay);
+        await Time.Delay(300);
         last_distance = getDistance(ultraMid);
         IO.PrintLine($"last_distance: {last_distance}");
         
@@ -976,12 +982,15 @@ async Task RescueProcess() {
 
     double c;
     UltrasonicSensor ultraSide;
+    UltrasonicSensor ultraWall;
     if (is_up) {
         c = 1;
         ultraSide = ultraRight;
+        ultraWall = ultraLeft;
     } else { // is_down
         c = -1;
         ultraSide = ultraLeft;
+        ultraWall = ultraRight;
     }
     IO.PrintLine($"c={c}");
     await both.turnDegree(baseforce, turnspeed, 45*-c);
@@ -990,8 +999,8 @@ async Task RescueProcess() {
     await reachWall(4.5);
     await both.turnDegree(baseforce, turnspeed, 45*c);
     await alignDirection();
-    bool must_deliver = false;
-    while(true) {
+    bool must_deliver = true; // DEIXAR COMO FALSE DEPOIS DOS TESTES PRA ACHAR A SAÍDA
+    while(!must_deliver) {
         last_distance = 999;
         while(last_distance==999 && !must_deliver) { // adicionar aqui, ou chegar no fim da linha
             await Time.Delay(root_delay);
@@ -1042,6 +1051,99 @@ async Task RescueProcess() {
         await alignDirection();
         IO.PrintLine("end of a cycle");
     }
+    //////////////////////////////////////
+    // PROCURAR SAÍDA, DEPOIS JOGAR ISSO LÁ PRA BAIXO
+    IO.PrintLine("searching exit...");
+    bool found_exit = false;
+    bool opening_aside = false;
+    bool blue_above = false;
+    bool green_above = false;
+    bool must_turn = false;
+    while(!found_exit) {
+        found_exit = false;
+        opening_aside = false;
+        blue_above = false;
+        green_above = false;
+        must_turn = false;
+        while(!opening_aside && !blue_above && !green_above && !must_turn) {
+            await both.together(baseforce, basespeed);
+            await Time.Delay(root_delay);
+            blue_above = isRescue();
+            green_above = hasSomeGreen();
+            opening_aside = getDistance(ultraWall)>15d;
+            must_turn = getDistance(ultraMid)<3.5d;
+        }
+        await both.stop(100);
+
+        if (blue_above) {
+            IO.PrintLine("evitado entrada da área de resgate...");
+            await both.together(baseforce, basespeed, -0.35);
+            await both.stop();
+            await both.turnDegree(baseforce, basespeed, 90*c);
+            await alignDirection();
+            opening_aside = true;
+            while(opening_aside) {
+                await both.together(baseforce, basespeed);
+                await Time.Delay(root_delay);
+                must_turn = getDistance(ultraMid)<3.5d;
+                opening_aside = getDistance(ultraWall)>15d;
+                if (hasSomeGreen() || isRescue() || must_turn) {
+                    break;
+                }
+            }
+            await both.stop(100);
+        } else if (green_above) {
+            IO.PrintLine("achou o verde de primeira");
+            await debug();
+            found_exit  = true;
+        } else if (must_turn) {
+            await both.turnDegree(baseforce, basespeed, 90*c);
+            await alignDirection();
+        } else if (opening_aside) {
+            await both.together(baseforce, basespeed, 0.8);
+            await both.turnDegree(baseforce, turnspeed, 90*-c);
+            ulong time_to_line = millis();
+            while(!found_exit && !isRescue()) {
+                await both.together(baseforce, basespeed);
+                await Time.Delay(root_delay);
+                found_exit = hasSomeGreen();
+            }
+            time_to_line = millis() - time_to_line;
+            await both.stop(100);
+            if (found_exit) {
+                await alignDirection();
+                while(hasSomeGreen()) {
+                    await both.together(baseforce, basespeed);
+                    await Time.Delay(root_delay);
+                }
+                await both.together(baseforce, basespeed, 0.15);
+                await both.stop();
+                await seekLine();
+            } else {
+                await both.together(baseforce, -basespeed);
+                await Time.Delay(time_to_line);
+                await both.stop();
+                await both.turnDegree(baseforce, basespeed, 90*c);
+                opening_aside = true;
+                while(opening_aside) {
+                    await both.together(baseforce, basespeed);
+                    await Time.Delay(root_delay);
+                    must_turn = getDistance(ultraMid)<3.5d;
+                    opening_aside = getDistance(ultraWall)>15d;
+                    if (hasSomeGreen() || isRescue() || must_turn) {
+                        break;
+                    }
+                }
+                await both.stop(100);
+            }
+        }
+
+    }
+
+    await debug("FOUND EXIT");
+    /////////////////////////////////////
+
+
     await both.turnDegree(baseforce, turnspeed, 90*c);
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 90*c);
