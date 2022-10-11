@@ -12,9 +12,10 @@ ColorSensor bagColorL = Bot.GetComponent<ColorSensor>("bagColorL");
 
 UltrasonicSensor ultraDown = Bot.GetComponent<UltrasonicSensor>("ultraDown");
 UltrasonicSensor ultraMid = Bot.GetComponent<UltrasonicSensor>("ultraMid");
-
+UltrasonicSensor ultraMidRight = Bot.GetComponent<UltrasonicSensor>("ultraMidRight");
 UltrasonicSensor ultraRight = Bot.GetComponent<UltrasonicSensor>("ultraRight");
 UltrasonicSensor ultraLeft = Bot.GetComponent<UltrasonicSensor>("ultraLeft");
+
 
 Motor motorR = new Motor("rmotor");
 Motor motorL = new Motor("lmotor");
@@ -916,9 +917,9 @@ async Task moveRight(double force, double speed) {
     await back_motorR.walk(force, speed);
 }
 
-async Task reachWall(double minimum_distance=4.5, double max_rotations=0.4) {
+async Task reachWall(UltrasonicSensor desired_ultra, double minimum_distance=4.5, double max_rotations=0.4) {
     had_green = false;
-    while(getDistance(ultraMid)>minimum_distance && !had_green) {
+    while(getDistance(desired_ultra)>minimum_distance && !had_green) {
         await both.together(baseforce, basespeed);
         await Time.Delay(root_delay);
         had_green = hasSomeGreen();
@@ -959,11 +960,13 @@ bool mustTurn() {
 
 async Task searchExit(double c=1) {
     IO.PrintLine("searching exit...");
+    
+    UltrasonicSensor ultraMidAux = (c>0) ? ultraMid : ultraMidRight;
 
     await both.turnDegree(baseforce, turnspeed, 45*-c);
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 45*-c);
-    await reachWall(); // use rotations or something, may be green
+    await reachWall(ultraMidAux);
     await both.turnDegree(baseforce, turnspeed, 45*c);
     await alignDirection();
 
@@ -1109,10 +1112,11 @@ async Task RescueProcess() {
         ultraSide = ultraLeft;
     }
     IO.PrintLine($"c={c}");
+    UltrasonicSensor ultraMidAux = (c>0) ? ultraMid : ultraMidRight;
     await both.turnDegree(baseforce, turnspeed, 45*-c);
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 45*-c);
-    await reachWall(); // use rotations or something, may be green
+    await reachWall(ultraMidAux);
     await both.turnDegree(baseforce, turnspeed, 45*c);
     await alignDirection();
     bool must_deliver = false;
@@ -1150,7 +1154,7 @@ async Task RescueProcess() {
         await Time.Delay(200);
         // go back
         await both.together(baseforce, -basespeed);
-        await Time.Delay(time_to_victim*0.9d);
+        await Time.Delay(time_to_victim*0.95d);
 
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 90*-c);
