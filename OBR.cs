@@ -35,9 +35,9 @@ TouchSensor touchL = Bot.GetComponent<TouchSensor>("touchLeft");
 
 
 // editable variables ////////////////////////
-double initial_basespeed = 190;
-double initial_baseforce = 500; // 220
-double initial_turnspeed = 400;
+double initial_basespeed = 190; // 190
+double initial_baseforce = 500; // 500
+double initial_turnspeed = 400; // 400
 double superforce = 500;
 
 // dynamic variables ////////////////////////
@@ -354,6 +354,11 @@ async Task Main() {
 
     bool debug_mode = false; // debug mode
     if (debug_mode) {
+        await armUp();
+        await handOpen();
+        both.Lock(false);
+        await Time.Delay(300);
+        await both.together(500, 300, 1);
         await debug(getBagColor());
     }
     await armUp();
@@ -386,8 +391,8 @@ async Task Main() {
 
 async Task MainProcess() {
     await followLine();
-    bool has_left_green = (isGreen(LeftColor) || isGreen(ExtremeLeftColor)) || (isGreen(RightColor) && isGreen(ExtremeRightColor) && isGreen(MidColor, 0.95d));
-    bool has_right_green = (isGreen(RightColor) || isGreen(ExtremeRightColor)) || (isGreen(LeftColor) && isGreen(ExtremeLeftColor) && isGreen(MidColor, 0.95d));
+    bool has_left_green = hasLeftGreen();
+    bool has_right_green = hasRightGreen();
     bool has_obstacle = getDistance(ultraMid) <= 0.8 &&  getDistance(ultraDown) <= 2;
     bool has_cube = getDistance(ultraDown)<=0.8 && !has_obstacle && getDistance(ultraMid) >= 6;
     bool possible_right_crossing = (readLine()=="0 1 1");
@@ -443,6 +448,7 @@ async Task MainProcess() {
         double last_rotations = 0.3;
         double front_rotations = 2.6;
         IO.Print("going back");
+        await alignDirection();
         await both.together(superforce, basespeed, -back_rotations);
         await both.stop();
         if (getDistance(ultraLeft)<10) c = 1;
@@ -472,7 +478,9 @@ async Task MainProcess() {
     if (has_left_green || has_right_green) {
         IO.PrintLine("possible green");
         double c = 0;
-        await both.together(superforce,basespeed,0.01);
+        await both.together(superforce,basespeed, 0.01);
+        has_left_green = hasLeftGreen();
+        has_right_green = hasRightGreen();
         if (has_left_green && has_right_green) {
             // 180 degrees
             IO.PrintLine("180 green");
@@ -494,7 +502,6 @@ async Task MainProcess() {
             await both.together(superforce, basespeed, -0.1);
             await both.turnDegree(superforce, 500, -210);
             await both.together(superforce, basespeed, -0.1);
-            await alignDirection();
             await seekLine();
         }
         while (hasSomeGreen()) {
@@ -638,8 +645,17 @@ async Task SharpCurve(double speed, double c=1) {
 bool hasSomeGreen() {
     return isGreen(LeftColor) || isGreen(ExtremeLeftColor) || isGreen(MidColor) || isGreen(RightColor) || isGreen(ExtremeRightColor);
 }
+
 bool hasAllGreen() {
     return isGreen(LeftColor) && isGreen(ExtremeLeftColor) && isGreen(MidColor) && isGreen(RightColor) && isGreen(ExtremeRightColor);
+}
+
+bool hasLeftGreen() {
+    return (isGreen(LeftColor) || isGreen(ExtremeLeftColor)) || ((isGreen(RightColor) && isGreen(ExtremeRightColor) && isGreen(MidColor, 0.95d)));
+}
+
+bool hasRightGreen() {
+    return (isGreen(RightColor) || isGreen(ExtremeRightColor)) || ((isGreen(LeftColor) && isGreen(ExtremeLeftColor) && isGreen(MidColor, 0.95d)));
 }
 
 async Task debug(string text="") {
@@ -900,7 +916,7 @@ async Task moveRight(double force, double speed) {
     await back_motorR.walk(force, speed);
 }
 
-async Task reachWall(double minimum_distance=4.5, double max_rotations=0.2) {
+async Task reachWall(double minimum_distance=4.5, double max_rotations=0.4) {
     had_green = false;
     while(getDistance(ultraMid)>minimum_distance && !had_green) {
         await both.together(baseforce, basespeed);
@@ -909,7 +925,7 @@ async Task reachWall(double minimum_distance=4.5, double max_rotations=0.2) {
     }
     await both.stop();
     if (had_green) {
-        await both.together(baseforce, basespeed, -Math.Abs(max_rotations));
+        await both.together(baseforce, basespeed, -Math.Abs(minimum_distance*(0.4d/4.5d)));
     }
 }
 
@@ -969,7 +985,8 @@ async Task searchExit(double c=1) {
 
         if (blue_above) {
             IO.PrintLine("evitado entrada da área de resgate...");
-            await both.together(baseforce, basespeed, -0.35);
+            await alignDirection();
+            await both.together(baseforce, basespeed, -0.4);
             await both.stop();
             await both.turnDegree(baseforce, basespeed, 90*c);
             await alignDirection();
@@ -983,11 +1000,11 @@ async Task searchExit(double c=1) {
             IO.PrintLine("achou o verde de primeira");
             await both.turnDegree(baseforce, turnspeed, 20*c);
             await both.together(baseforce, basespeed, 0.5);
-            await both.turnDegree(baseforce, turnspeed, 20*-c);
             while(hasSomeGreen()) {
                 await both.together(baseforce, basespeed);
                 await Time.Delay(root_delay);
             }
+            await both.turnDegree(baseforce, turnspeed, 20*-c);
             await both.stop(100);
             await seekLine();
             found_exit  = true;
@@ -1133,7 +1150,7 @@ async Task RescueProcess() {
         await Time.Delay(200);
         // go back
         await both.together(baseforce, -basespeed);
-        await Time.Delay(time_to_victim);
+        await Time.Delay(time_to_victim*0.9d);
 
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 90*-c);
