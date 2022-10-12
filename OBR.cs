@@ -809,7 +809,7 @@ bool isGreen(ColorSensor sensor, double margin=0.9) {
     return ((real>reading.Red) && (real>reading.Blue));
 }
 
-bool isBlue(ColorSensor sensor, double margin=1) {
+bool isBlue(ColorSensor sensor, double margin=0.95) {
     Color reading = sensor.Analog;
     double real = (reading.Blue * margin);
     return ((real>reading.Red) && (real>reading.Green));
@@ -851,11 +851,21 @@ async Task adjustFrontDistance(double force, double speed, double desired_distan
 }
 
 async Task adjustDownDistance(double force, double speed, double desired_distance, bool must_stop=true) {
-    while (getDistance(ultraDown)>desired_distance) {
-        await both.together(force, speed);
-        await Time.Delay(root_delay);
-        //IO.Print($"adjusting distance: {getDistance(ultraDown)}");
+    double down_distance = getDistance(ultraDown);
+    if (down_distance>desired_distance) {
+        while (getDistance(ultraDown)>desired_distance) {
+            await both.together(force, speed);
+            await Time.Delay(root_delay);
+            //IO.Print($"adjusting distance: {getDistance(ultraDown)}");
+        }
+    } else if (down_distance<desired_distance) {
+        while (getDistance(ultraDown)<desired_distance) {
+            await both.together(force, -speed);
+            await Time.Delay(root_delay);
+            //IO.Print($"adjusting distance: {getDistance(ultraDown)}");
+        }
     }
+    
     if (must_stop) await both.stop();
 }
 
@@ -1076,6 +1086,7 @@ async Task RescueProcess() {
     await alignDirection();
     await both.together(baseforce, basespeed, 1.4);
     await alignDirection();
+    await Time.Delay(300);
     double last_distance = getDistance(ultraMid);
     bool is_up;
     bool is_down;
@@ -1089,6 +1100,7 @@ async Task RescueProcess() {
     double min_distance_up = 30;
     double min_distance_down = 20;
 
+    IO.PrintLine($"left_distance={left_distance}  || right_distance={right_distance}");
     if (is_down && main_side==1 && right_distance<min_distance_up) {
         IO.PrintLine("fast found box: right");
         await both.turnDegree(baseforce, turnspeed, 90);
@@ -1141,7 +1153,7 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
-    await deliverItem(main_side, (getBagColor()=="Ciano" || getBagColor()=="Azul"));
+    await deliverItem(main_side, (isBlue(bagColorL) || isBlue(bagColorR)));
     await Time.Delay(300);
 
     double c = 0;
@@ -1192,7 +1204,8 @@ async Task RescueProcess() {
         await both.stop();
 
         ulong time_to_victim = millis();
-        while (getDistance(ultraDown)>1.5d) {
+        double min_distance = 1.5d;
+        while (getDistance(ultraDown)>min_distance) {
             await both.together(baseforce, basespeed);
             await Time.Delay(root_delay);
         }
@@ -1211,8 +1224,17 @@ async Task RescueProcess() {
             await moveLeft(baseforce, align_speed*-c);
             await Time.Delay(root_delay);
         }
-        await both.turnDegree(500, align_speed, 8*-c);
+        
+        await both.turnDegree(500, align_speed, 10*-c); // align to victim
         await both.stop();
+        ///////
+        double align_distance = 1.2d;
+        await both.turnDegree(500, align_speed, 1*-c);
+        await both.stop(200);
+        await adjustDownDistance(baseforce, basespeed, align_distance);
+        //////
+        await both.stop();
+        await Time.Delay(300);
         await grabItem(); // get victim
         await Time.Delay(200);
         // go back
