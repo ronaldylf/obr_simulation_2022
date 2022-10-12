@@ -322,7 +322,7 @@ async Task alignDirection(double value=-1, double margin=45, double anti_inertia
 
 
     double reading_value = Bot.Compass;
-    double speed = 150;
+    double speed = 200; // 150
     //IO.PrintLine($"direction: {direction} | reading_value:{reading_value}");
     if (reading_value>=smaller && reading_value<=special) { // da esquerda pra direita
         while (Bot.Compass<(special-anti_inertia)) {
@@ -338,6 +338,7 @@ async Task alignDirection(double value=-1, double margin=45, double anti_inertia
             await Time.Delay(root_delay);
         }
     }
+    await both.stop();
 }
 
 async Task Main() {
@@ -409,11 +410,21 @@ async Task MainProcess() {
     if (has_cube) {
         IO.PrintLine("blue cube ahead");
         await both.together(superforce, 50, -0.08);
+
         while(true) {
             await Time.Delay(root_delay);
-            await moveRight(superforce, -100); await moveLeft(superforce, 100);
+            await moveRight(superforce, 400); await moveLeft(superforce, -400);
+            if (!isBlue(FrontLeftColor)) break;
+        }
+
+        await both.stop();
+
+        while(true) {
+            await Time.Delay(root_delay);
+            await moveRight(superforce, -400); await moveLeft(superforce, 400);
             if (isBlue(FrontLeftColor)) break;
         }
+        await adjustDownDistance(baseforce, basespeed, 1.1);
         await both.stop(100);
         IO.PrintLine("found");
         await grabItem(); // get cube
@@ -440,14 +451,17 @@ async Task MainProcess() {
 
     if (has_obstacle) {
         IO.PrintLine("obstacle ahead");
-        await both.stop(500);
+        await both.together(baseforce, basespeed);
+        await Time.Delay(300);
+        await both.stop();
         await alignDirection();
+        await Time.Delay(200);
         double c = -1;
         double turn_angle = 90;
         double back_rotations = 0.5;
         double side_rotations = 1;
         double last_rotations = 0.3;
-        double front_rotations = 2.6;
+        double front_rotations = 2.4;
         IO.Print("going back");
         await alignDirection();
         await both.together(superforce, basespeed, -back_rotations);
@@ -502,7 +516,7 @@ async Task MainProcess() {
         await both.stop();
         if (c!=0) {
             await both.together(superforce, basespeed, 0.35);
-            await both.turnDegree(superforce, turnspeed, 3*c);
+            await both.turnDegree(superforce, turnspeed, 5*c);
             await SharpCurve(turnspeed, c);
         } else { // 180 green
             await both.together(superforce, basespeed, -0.1);
@@ -851,6 +865,7 @@ async Task adjustFrontDistance(double force, double speed, double desired_distan
 }
 
 async Task adjustDownDistance(double force, double speed, double desired_distance, bool must_stop=true) {
+    await both.stop();
     double down_distance = getDistance(ultraDown);
     if (down_distance>desired_distance) {
         while (getDistance(ultraDown)>desired_distance) {
@@ -1086,7 +1101,7 @@ async Task RescueProcess() {
     await alignDirection();
     await both.together(baseforce, basespeed, 1.4);
     await alignDirection();
-    await Time.Delay(300);
+    await Time.Delay(500);
     double last_distance = getDistance(ultraMid);
     bool is_up;
     bool is_down;
@@ -1099,7 +1114,7 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     double min_distance_up = 30;
     double min_distance_down = 20;
-
+    IO.PrintLine($"last_distance={last_distance}");
     IO.PrintLine($"left_distance={left_distance}  || right_distance={right_distance}");
     if (is_down && main_side==1 && right_distance<min_distance_up) {
         IO.PrintLine("fast found box: right");
@@ -1194,7 +1209,7 @@ async Task RescueProcess() {
         await both.stop(100);
         await both.turnDegree(baseforce, turnspeed, 90*c);
         await alignDirection();
-        await both.turnDegree(baseforce, turnspeed, 5*c);
+        await both.turnDegree(baseforce, turnspeed, 6*c);
         while(getDistance(ultraDown)==999) {
             await moveRight(baseforce, 200*c);
             await moveLeft(baseforce, 200*-c);
@@ -1228,14 +1243,16 @@ async Task RescueProcess() {
         await both.turnDegree(500, align_speed, 10*-c); // align to victim
         await both.stop();
         ///////
-        double align_distance = 1.2d;
-        await both.turnDegree(500, align_speed, 1*-c);
+        double align_distance = 1d;
+        await both.turnDegree(500, align_speed, 3*c);
         await both.stop(200);
-        await adjustDownDistance(baseforce, basespeed, align_distance);
+        //await adjustDownDistance(baseforce, basespeed, align_distance);
         //////
         await both.stop();
         await Time.Delay(300);
         await grabItem(); // get victim
+        double avoid_mistake_rotations = 0.2;
+        await both.together(baseforce, 200, avoid_mistake_rotations); await both.together(baseforce, 200, -avoid_mistake_rotations);
         await Time.Delay(200);
         // go back
         await both.together(baseforce, -basespeed);
