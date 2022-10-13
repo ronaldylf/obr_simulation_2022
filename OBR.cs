@@ -322,7 +322,7 @@ async Task alignDirection(double value=-1, double margin=45, double anti_inertia
 
 
     double reading_value = Bot.Compass;
-    double speed = 200; // 150
+    double speed = 150;
     //IO.PrintLine($"direction: {direction} | reading_value:{reading_value}");
     if (reading_value>=smaller && reading_value<=special) { // da esquerda pra direita
         while (Bot.Compass<(special-anti_inertia)) {
@@ -1076,7 +1076,8 @@ async Task searchExit(double c=1) {
                 await both.together(baseforce, -basespeed);
                 await Time.Delay(time_to_line);
                 await both.stop();
-                await both.turnDegree(baseforce, basespeed, 90*c);
+                await both.turnDegree(baseforce, turnspeed, 90*c);
+                await alignDirection();
                 while(isOpenAside(ultraWall)) {
                     await both.together(baseforce, basespeed);
                     await Time.Delay(root_delay);
@@ -1168,7 +1169,7 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
-    await deliverItem(main_side, (isBlue(bagColorL) || isBlue(bagColorR)));
+    await deliverItem(main_side, (isBlue(bagColorL, 1) || isBlue(bagColorR, 1)));
     await Time.Delay(300);
 
     double c = 0;
@@ -1251,12 +1252,14 @@ async Task RescueProcess() {
         await both.stop();
         await Time.Delay(300);
         await grabItem(); // get victim
+        await Time.Delay(100);
         double avoid_mistake_rotations = 0.2;
         await both.together(baseforce, 200, avoid_mistake_rotations); await both.together(baseforce, 200, -avoid_mistake_rotations);
         await Time.Delay(200);
         // go back
+        await alignDirection();
         await both.together(baseforce, -basespeed);
-        await Time.Delay(time_to_victim*0.95d);
+        await Time.Delay(time_to_victim); //*0.95d
 
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 90*-c);
