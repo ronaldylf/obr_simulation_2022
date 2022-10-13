@@ -1029,7 +1029,7 @@ async Task searchExit(double c=1) {
             await alignDirection();
             await both.together(baseforce, basespeed, -0.4);
             await both.stop();
-            await both.turnDegree(baseforce, basespeed, 90*c);
+            await both.turnDegree(baseforce, turnspeed, 90*c);
             await alignDirection();
             while(isOpenAside(ultraWall)) {
                 await both.together(baseforce, basespeed);
