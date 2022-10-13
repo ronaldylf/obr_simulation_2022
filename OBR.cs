@@ -963,8 +963,9 @@ async Task reachWall(UltrasonicSensor desired_ultra, double minimum_distance=4.5
 
 async Task deliverItem(double c=1, bool must_open_bag=true, double rot_after_align=0) {
     await both.stop();
+    await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 45*c);
-    await both.together(baseforce, basespeed, 0.7);
+    await both.together(baseforce, basespeed, 1.2);
 
     await both.turnDegree(baseforce, turnspeed, 90*c);
     await alignBack();
@@ -973,11 +974,12 @@ async Task deliverItem(double c=1, bool must_open_bag=true, double rot_after_ali
         handClose();
         await armDown();
         await Time.Delay(100);
-        while(getBagColor()!="Vermelho") {
+
+        do {
             await openBag();
             await Time.Delay(100);
             await closeBag();
-        }
+        } while(getBagColor()!="Vermelho");
         
         handOpen();
         await armUp();
@@ -1093,6 +1095,50 @@ async Task searchExit(double c=1) {
     IO.PrintLine("found exit");
 }
 
+async Task getVictim(double c=1) {
+    ulong time_to_victim = millis();
+    double min_distance = 1.5d;
+    while (getDistance(ultraDown)>min_distance) {
+        await both.together(baseforce, basespeed);
+        await Time.Delay(root_delay);
+    }
+    time_to_victim = millis() - time_to_victim;
+    await both.stop(100);
+    // align to victim
+    double align_speed = 250;
+    while(getDistance(ultraDown)<5) {
+        await moveRight(baseforce, align_speed*-c);
+        await moveLeft(baseforce, align_speed*c);
+        await Time.Delay(root_delay);
+    }
+    await both.stop();
+    while(getDistance(ultraDown)>5) {
+        await moveRight(baseforce, align_speed*c);
+        await moveLeft(baseforce, align_speed*-c);
+        await Time.Delay(root_delay);
+    }
+    
+    await both.turnDegree(500, align_speed, 10*-c); // align to victim
+    await both.stop();
+    ///////
+    double align_distance = 1d;
+    await both.turnDegree(500, align_speed, 3d); // "tequinho"
+    await both.stop(200);
+    //await adjustDownDistance(baseforce, basespeed, align_distance);
+    //////
+    await both.stop();
+    await Time.Delay(300);
+    await grabItem(); // get victim
+    await Time.Delay(100);
+    double avoid_mistake_rotations = 0.2;
+    await both.together(baseforce, 200, avoid_mistake_rotations); await both.together(baseforce, 200, -avoid_mistake_rotations);
+    await Time.Delay(200);
+    // go back
+    await alignDirection();
+    await both.together(baseforce, -basespeed);
+    await Time.Delay(time_to_victim); //*0.95d
+}
+
 async Task RescueProcess() {
     IO.ClearPrint();
     IO.PrintLine("Inside Rescue Arena");
@@ -1169,7 +1215,8 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
-    await deliverItem(main_side, (isBlue(bagColorL, 1) || isBlue(bagColorR, 1)));
+    //await deliverItem(main_side, (isBlue(bagColorL, 1) || isBlue(bagColorR, 1)));
+    await deliverItem(main_side);
     await Time.Delay(300);
 
     double c = 0;
@@ -1219,51 +1266,18 @@ async Task RescueProcess() {
         await both.turnDegree(baseforce, 200, 1d*-c);
         await both.stop();
 
-        ulong time_to_victim = millis();
-        double min_distance = 1.5d;
-        while (getDistance(ultraDown)>min_distance) {
-            await both.together(baseforce, basespeed);
-            await Time.Delay(root_delay);
-        }
-        time_to_victim = millis() - time_to_victim;
-        await both.stop(100);
-        // align to victim
-        double align_speed = 250;
-        while(getDistance(ultraDown)<5) {
-            await moveRight(baseforce, align_speed*-c);
-            await moveLeft(baseforce, align_speed*c);
-            await Time.Delay(root_delay);
-        }
-        await both.stop();
-        while(getDistance(ultraDown)>5) {
-            await moveRight(baseforce, align_speed*c);
-            await moveLeft(baseforce, align_speed*-c);
-            await Time.Delay(root_delay);
-        }
-        
-        await both.turnDegree(500, align_speed, 10*-c); // align to victim
-        await both.stop();
-        ///////
-        double align_distance = 1d;
-        await both.turnDegree(500, align_speed, 3*c);
-        await both.stop(200);
-        //await adjustDownDistance(baseforce, basespeed, align_distance);
-        //////
-        await both.stop();
-        await Time.Delay(300);
-        await grabItem(); // get victim
-        await Time.Delay(100);
-        double avoid_mistake_rotations = 0.2;
-        await both.together(baseforce, 200, avoid_mistake_rotations); await both.together(baseforce, 200, -avoid_mistake_rotations);
-        await Time.Delay(200);
-        // go back
-        await alignDirection();
-        await both.together(baseforce, -basespeed);
-        await Time.Delay(time_to_victim); //*0.95d
+        await getVictim(c);
 
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 90*-c);
         await alignDirection();
+
+        // go a little bit backwards
+        await both.together(500, -500);
+        await Time.Delay(50);
+        await both.stop();
+        await alignDirection();
+
         IO.PrintLine("end of a cycle");
     }
     
