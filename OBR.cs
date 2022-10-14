@@ -356,12 +356,7 @@ async Task Main() {
 
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        await armUp();
-        await handOpen();
-        both.Lock(false);
-        await Time.Delay(300);
-        await both.turnDegree(500, 400, 90);
-        await debug(getBagColor());
+        await debug();
     }
     await armUp();
     await handOpen();
@@ -458,10 +453,10 @@ async Task MainProcess() {
         await Time.Delay(200);
         double c = -1;
         double turn_angle = 90;
-        double back_rotations = 0.5;
-        double side_rotations = 1;
+        double back_rotations = 0.7;
+        double side_rotations = 0.95;
         double last_rotations = 0.3;
-        double front_rotations = 2.4;
+        double front_rotations = 2.6;
         IO.Print("going back");
         await alignDirection();
         await both.together(superforce, basespeed, -back_rotations);
@@ -1030,6 +1025,7 @@ async Task searchExit(double c=1) {
             await both.together(baseforce, basespeed, -0.4);
             await both.stop();
             await both.turnDegree(baseforce, turnspeed, 90*c);
+            await both.stop(200);
             await alignDirection();
             while(isOpenAside(ultraWall)) {
                 await both.together(baseforce, basespeed);
@@ -1096,47 +1092,93 @@ async Task searchExit(double c=1) {
 }
 
 async Task getVictim(double c=1) {
-    ulong time_to_victim = millis();
-    double min_distance = 1.5d;
-    while (getDistance(ultraDown)>min_distance) {
-        await both.together(baseforce, basespeed);
-        await Time.Delay(root_delay);
+    ulong initial_time = 0;
+    ulong last_align_time = 0;
+
+    for (int counter=0; counter<=20; counter++) {
+        ulong time_to_victim = millis();
+        double min_distance = 1.5d;
+        double min_mid_distance = 3.3d;
+
+        await both.turnDegree(baseforce, 200, 2d*-c);
+        await both.stop();
+
+        while (getDistance(ultraDown)>min_distance && getDistance(ultraMid)>min_mid_distance) {
+            await both.together(baseforce, basespeed);
+            await Time.Delay(root_delay);
+        }
+        time_to_victim = millis() - time_to_victim;
+        if (counter==0) initial_time = time_to_victim;
+        await both.stop(100);
+        // align to victim
+        double align_speed = 250;
+        while(getDistance(ultraDown)<5) {
+            await moveRight(baseforce, align_speed*-c);
+            await moveLeft(baseforce, align_speed*c);
+            await Time.Delay(root_delay);
+        }
+        await both.stop();
+        
+        while(getDistance(ultraDown)>5 && getDistance(ultraMid)>min_mid_distance) {
+            await moveRight(baseforce, 250*c);
+            await moveLeft(baseforce, 250*-c);
+            await Time.Delay(root_delay);
+        }
+        
+        await moveRight(baseforce, 250*-c);
+        await moveLeft(baseforce, 250*c);
+        await both.turnDegree(500, align_speed, 10*-c); // align to victim
+        await both.stop();
+        ///////
+        double align_distance = 1d;
+        await both.turnDegree(500, align_speed, 3d); // "tequinho"
+        await both.stop(200);
+        //await adjustDownDistance(baseforce, basespeed, align_distance);
+        //////
+        await both.stop();
+        await Time.Delay(300);
+        await grabItem(); // get victim
+        await Time.Delay(100);
+        double avoid_mistake_rotations = 0.2;
+        await both.together(baseforce, 150, avoid_mistake_rotations);
+        await both.together(baseforce, 150, -avoid_mistake_rotations);
+        await Time.Delay(200);
+        
+        IO.PrintLine("seeking victim around...");
+        bool still_turn = true;
+        ulong align_time = millis();
+        while(getDistance(ultraDown)>6 && still_turn && getDistance(ultraMid)>min_mid_distance) {
+            await moveRight(baseforce, 250*c);
+            await moveLeft(baseforce, 250*-c);
+            await Time.Delay(root_delay);
+            still_turn = ((millis()-align_time+last_align_time)<4200);
+        }
+        align_time = millis() - align_time + last_align_time;
+        last_align_time = align_time;
+        IO.PrintLine($"align_time: {align_time}");
+        await both.stop();
+
+        if (still_turn) {
+            IO.PrintLine("found victim around");
+            continue;
+        } else {
+            IO.PrintLine("max range reachead");
+            await moveRight(baseforce, 250*-c);
+            await moveLeft(baseforce, 250*c);
+            await Time.Delay(align_time);
+            await both.stop();
+            break;
+        }
+
+        await both.together(baseforce, -basespeed);
+        await Time.Delay(time_to_victim); //*0.95d
     }
-    time_to_victim = millis() - time_to_victim;
-    await both.stop(100);
-    // align to victim
-    double align_speed = 250;
-    while(getDistance(ultraDown)<5) {
-        await moveRight(baseforce, align_speed*-c);
-        await moveLeft(baseforce, align_speed*c);
-        await Time.Delay(root_delay);
-    }
-    await both.stop();
-    while(getDistance(ultraDown)>5) {
-        await moveRight(baseforce, align_speed*c);
-        await moveLeft(baseforce, align_speed*-c);
-        await Time.Delay(root_delay);
-    }
-    
-    await both.turnDegree(500, align_speed, 10*-c); // align to victim
-    await both.stop();
-    ///////
-    double align_distance = 1d;
-    await both.turnDegree(500, align_speed, 3d); // "tequinho"
-    await both.stop(200);
-    //await adjustDownDistance(baseforce, basespeed, align_distance);
-    //////
-    await both.stop();
-    await Time.Delay(300);
-    await grabItem(); // get victim
-    await Time.Delay(100);
-    double avoid_mistake_rotations = 0.2;
-    await both.together(baseforce, 200, avoid_mistake_rotations); await both.together(baseforce, 200, -avoid_mistake_rotations);
-    await Time.Delay(200);
+
+
     // go back
     await alignDirection();
     await both.together(baseforce, -basespeed);
-    await Time.Delay(time_to_victim); //*0.95d
+    await Time.Delay(initial_time); //*0.95d
 }
 
 async Task RescueProcess() {
@@ -1263,8 +1305,6 @@ async Task RescueProcess() {
             await moveLeft(baseforce, 200*-c);
             await Time.Delay(root_delay);
         }
-        await both.turnDegree(baseforce, 200, 1d*-c);
-        await both.stop();
 
         await getVictim(c);
 
