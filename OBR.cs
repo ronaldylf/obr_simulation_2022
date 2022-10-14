@@ -994,6 +994,7 @@ bool mustTurn() {
 async Task searchExit(double c=1) {
     IO.PrintLine("searching exit...");
     
+    basespeed = 220;
     UltrasonicSensor ultraMidAux = (c>0) ? ultraMid : ultraMidRight;
 
     await both.turnDegree(baseforce, turnspeed, 45*-c);
@@ -1142,11 +1143,16 @@ async Task getVictim(double c=1) {
         //////
         await both.stop();
         await Time.Delay(300);
+        IO.PrintLine($"compass before victim: {Bot.Compass}");
         await grabItem(); // get victim
         await Time.Delay(100);
         double avoid_mistake_rotations = 0.2;
         await both.together(baseforce, 150, avoid_mistake_rotations);
         await both.together(baseforce, 150, -avoid_mistake_rotations);
+
+        await both.turnDegree(baseforce, basespeed, 5); // to avoid misalignment caused by hand
+
+        IO.PrintLine($"compass after picking victim: {Bot.Compass}");
         await Time.Delay(200);
         
         IO.PrintLine("seeking victim around...");
@@ -1305,14 +1311,14 @@ async Task RescueProcess() {
         await both.turnDegree(baseforce, turnspeed, 90*c);
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 6*c);
-        while(getDistance(ultraDown)==999) {
+        while(getDistance(ultraDown)>28) { // while dont find victim:
             await moveRight(baseforce, 200*c);
             await moveLeft(baseforce, 200*-c);
             await Time.Delay(root_delay);
         }
-
+        IO.PrintLine($"found victim at distance: {getDistance(ultraDown)}");
+        await both.stop();
         await getVictim(c);
-
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 90*-c);
         await alignDirection();
