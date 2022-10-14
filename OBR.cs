@@ -988,7 +988,7 @@ bool isOpenAside(UltrasonicSensor desired_ultra) {
 }
 
 bool mustTurn() {
-    return getDistance(ultraMid)<3.5d;
+    return getDistance(ultraMid)<3.2d;
 }
 
 async Task searchExit(double c=1) {
@@ -1091,19 +1091,24 @@ async Task searchExit(double c=1) {
     IO.PrintLine("found exit");
 }
 
+bool isSeeing() {
+    double min_distance = 1.5d;
+    return getDistance(ultraDown)>min_distance;
+}
+
 async Task getVictim(double c=1) {
     ulong initial_time = 0;
     ulong last_align_time = 0;
 
     for (int counter=0; counter<=20; counter++) {
         ulong time_to_victim = millis();
-        double min_distance = 1.5d;
+        
         double min_mid_distance = 3.3d;
 
         await both.turnDegree(baseforce, 200, 2d*-c);
         await both.stop();
 
-        while (getDistance(ultraDown)>min_distance && getDistance(ultraMid)>min_mid_distance) {
+        while (isSeeing() && getDistance(ultraMid)>min_mid_distance) {
             await both.together(baseforce, basespeed);
             await Time.Delay(root_delay);
         }
@@ -1147,7 +1152,7 @@ async Task getVictim(double c=1) {
         IO.PrintLine("seeking victim around...");
         bool still_turn = true;
         ulong align_time = millis();
-        while(getDistance(ultraDown)>6 && still_turn && getDistance(ultraMid)>min_mid_distance) {
+        while(getDistance(ultraDown)>6.1d && still_turn && getDistance(ultraMid)>min_mid_distance) {
             await moveRight(baseforce, 250*c);
             await moveLeft(baseforce, 250*-c);
             await Time.Delay(root_delay);
@@ -1285,7 +1290,7 @@ async Task RescueProcess() {
     bool must_deliver = false;
     while(!must_deliver) {
         last_distance = 999;
-        while(last_distance==999 && !must_deliver) { // adicionar aqui, ou chegar no fim da linha
+        while(last_distance==999 && !must_deliver) {
             await Time.Delay(root_delay);
             await both.together(500, 200);
             last_distance = getDistance(ultraSide);
