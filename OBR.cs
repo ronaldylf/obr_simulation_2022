@@ -55,7 +55,7 @@ bool had_green = false;
 
 // for PID line follower:
 int error = 0, last_error = 0;
-float     Kp = 140f, // 140
+float     Kp = 141f, // 140
         Ki = 4.5f, // 5
         Kd = 15f; // 15
 
@@ -1120,7 +1120,7 @@ async Task getVictim(double c=1) {
     for (int counter=0; counter<=20; counter++) {
         ulong time_to_victim = millis();
         
-        double min_mid_distance = 8d;
+        double min_mid_distance = 6d;
         both.exclusivity = true;
         await both.turnDegree(baseforce, 200, 2d*-c);
         both.exclusivity = false;
@@ -1252,26 +1252,45 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     double min_distance_up = 30;
     double min_distance_down = 20;
+    
     IO.PrintLine($"last_distance={last_distance}");
     IO.PrintLine($"left_distance={left_distance}  || right_distance={right_distance}");
+    bool fast_found = true;
     if (is_down && main_side==1 && right_distance<min_distance_up) {
         IO.PrintLine("fast found box: right");
         await both.turnDegree(baseforce, turnspeed, 90);
         main_side = -1;
+        fast_found = true;
     } else if (is_down && main_side==-1 && left_distance<min_distance_up) {
         IO.PrintLine("fast found box: left");
         await both.turnDegree(baseforce, turnspeed, -90);
         main_side = 1;
+        fast_found = true;
     } else if (is_up && main_side==1 && right_distance<min_distance_down) {
         IO.PrintLine("fast found box: right");
         await both.turnDegree(baseforce, turnspeed, 90);
         main_side = -1;
+        fast_found = true;
     } else if (is_up && main_side==-1 && left_distance<min_distance_down) {
         IO.PrintLine("fast found box: left");
         await both.turnDegree(baseforce, turnspeed, -90);
         main_side = 1;
+        fast_found = true;
     }
 
+    await alignDirection();
+    if (fast_found) {
+        await both.together(baseforce, basespeed, -0.2d);
+        await Time.Delay(200);
+        last_distance = getDistance(ultraMid);
+        is_up = (last_distance>=50); // em pe
+        is_down = (last_distance<50); // deitada
+        await both.together(baseforce, basespeed, 1.7d);
+        await alignDirection();
+    }
+
+    UltrasonicSensor ultraFindExit = (main_side>0) ? ultraLeft : ultraRight;
+    bool already_found_exit = false;
     IO.PrintLine($"main_side: {main_side}");
     while(true) { // loop until find black box
         await alignDirection();
@@ -1283,6 +1302,9 @@ async Task RescueProcess() {
         while(true) {
             await Time.Delay(root_delay);
             await both.together(baseforce, basespeed);
+
+            already_found_exit = (getDistance(ultraFindExit)>10) || already_found_exit;
+
             if (getDistance(ultraMid)<10) {
                 if(isBox()) break;
                 await adjustFrontDistance(baseforce, basespeed, 3, true);
@@ -1300,15 +1322,17 @@ async Task RescueProcess() {
         await alignDirection();
     }
     IO.PrintLine("found box!");
+    IO.PrintLine($"already_found_exit: {already_found_exit}");
 
-    // check the state of arena
-    is_up = (last_distance>=50); // em pe
-    is_down = (last_distance<50); // deitada
+    // check the state of arena if not fast found
+    if (!fast_found) {
+        is_up = (last_distance>=50); // em pe
+        is_down = (last_distance<50); // deitada
+    }
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
     await deliverItem(main_side, true, 0.95d);
     await Time.Delay(300);
-
     double c = 0;
     if (is_up && main_side==-1) {
         c = -1;
@@ -1332,9 +1356,11 @@ async Task RescueProcess() {
     await both.turnDegree(baseforce, turnspeed, 45*c);
     await alignDirection();
     bool must_deliver = false;
+
     while(!must_deliver) {
         last_distance = 999;
-        while(last_distance>28 && !must_deliver) {
+        double max_see_distance = 26;
+        while(last_distance>max_see_distance && !must_deliver) {
             await Time.Delay(root_delay);
             await both.together(500, 200);
             last_distance = getDistance(ultraSide);
@@ -1349,7 +1375,7 @@ async Task RescueProcess() {
         await both.turnDegree(baseforce, turnspeed, 90*c);
         await alignDirection();
         await both.turnDegree(baseforce, turnspeed, 6*c);
-        while(getDistance(ultraDown)>28) { // while dont find victim:
+        while(getDistance(ultraDown)>max_see_distance) { // while dont find victim:
             await moveRight(baseforce, 200*c);
             await moveLeft(baseforce, 200*-c);
             await Time.Delay(root_delay);
@@ -1380,6 +1406,8 @@ async Task RescueProcess() {
     await Time.Delay(300);
 
     IO.PrintLine("end of rescue");
-    await searchExit(c);
+    double exit_side = (already_found_exit) ? -main_side : main_side;
+    IO.PrintLine($"searching exit with exit_side = {exit_side}");
+    await searchExit(exit_side);
 }
 
