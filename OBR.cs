@@ -15,6 +15,7 @@ UltrasonicSensor ultraMid = Bot.GetComponent<UltrasonicSensor>("ultraMid");
 UltrasonicSensor ultraMidRight = Bot.GetComponent<UltrasonicSensor>("ultraMidRight");
 UltrasonicSensor ultraRight = Bot.GetComponent<UltrasonicSensor>("ultraRight");
 UltrasonicSensor ultraLeft = Bot.GetComponent<UltrasonicSensor>("ultraLeft");
+UltrasonicSensor ultraBack = Bot.GetComponent<UltrasonicSensor>("ultraBack");
 
 
 Motor motorR = new Motor("rmotor");
@@ -54,8 +55,8 @@ bool had_green = false;
 
 // for PID line follower:
 int error = 0, last_error = 0;
-float     Kp = 140f, // 120
-        Ki = 5f, // 20
+float     Kp = 140f, // 140
+        Ki = 4.5f, // 5
         Kd = 15f; // 15
 
 float     P=0, I=0, D=0, PID=0;
@@ -356,7 +357,7 @@ async Task Main() {
 
     bool debug_mode = false; // debug mode
     if (debug_mode) {
-        await debug();
+        await debug("end");
     }
     await armUp();
     await handOpen();
@@ -419,7 +420,7 @@ async Task MainProcess() {
             await moveRight(superforce, -400); await moveLeft(superforce, 400);
             if (isBlue(FrontLeftColor)) break;
         }
-        await adjustDownDistance(baseforce, basespeed, 1.1);
+        await adjustDownDistance(baseforce, basespeed, 1); //1.1
         await both.stop(100);
         IO.PrintLine("found");
         await grabItem(); // get cube
@@ -533,7 +534,9 @@ async Task MainProcess() {
         await seekLine(-1, false);
         if (was_gap) {
             IO.PrintLine("fake absolute crossing, going back...");
-
+            await both.together(baseforce, basespeed, -0.7);
+            await both.stop();
+            await seekLine();
         }
         return;
     }
@@ -943,9 +946,9 @@ async Task moveRight(double force, double speed) {
     await back_motorR.walk(force, speed);
 }
 
-async Task reachWall(UltrasonicSensor desired_ultra, double minimum_distance=4.5, double max_rotations=0.4) {
+async Task reachWall(UltrasonicSensor desired_ultra, double minimum_distance=4.5) {
     had_green = false;
-    while(getDistance(desired_ultra)>minimum_distance && !had_green) {
+    while(getDistance(desired_ultra)>Math.Abs(minimum_distance) && !had_green) {
         await both.together(baseforce, basespeed);
         await Time.Delay(root_delay);
         had_green = hasSomeGreen();
@@ -956,15 +959,27 @@ async Task reachWall(UltrasonicSensor desired_ultra, double minimum_distance=4.5
     }
 }
 
-async Task deliverItem(double c=1, bool must_open_bag=true, double rot_after_align=0) {
+async Task reachWallBackwards(double minimum_distance=2.1) {
+    had_green = false;
+    while(getDistance(ultraBack)>Math.Abs(minimum_distance) && !had_green) {
+        await both.together(baseforce, -basespeed);
+        await Time.Delay(root_delay);
+        had_green = hasSomeGreen();
+    }
+    await both.stop();
+    if (had_green) {
+        await both.together(baseforce, basespeed, Math.Abs(minimum_distance*(2.3d/4.5d)));
+    }
+}
+
+async Task deliverItem(double c=1, bool must_open_bag=true, double rotations=1.2, double wait_bag=200) {
     await both.stop();
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 45*c);
-    await both.together(baseforce, basespeed, 1.2);
+    await both.together(baseforce, basespeed, rotations);
 
     await both.turnDegree(baseforce, turnspeed, 90*c);
     await alignBack();
-    if(rot_after_align!=0) await both.together(baseforce, 60, Math.Abs(rot_after_align));
     if (must_open_bag) {
         handClose();
         await armDown();
@@ -972,8 +987,9 @@ async Task deliverItem(double c=1, bool must_open_bag=true, double rot_after_ali
 
         do {
             await openBag();
-            await Time.Delay(100);
+            await Time.Delay(wait_bag);
             await closeBag();
+            await Time.Delay(100);
         } while(getBagColor()!="Vermelho");
         
         handOpen();
@@ -1023,11 +1039,12 @@ async Task searchExit(double c=1) {
         if (blue_above) {
             IO.PrintLine("evitado entrada da área de resgate...");
             await alignDirection();
-            await both.together(baseforce, basespeed, -0.4);
-            await both.stop();
+            await Time.Delay(100);
+            await both.together(baseforce, basespeed, -0.6);
+            await Time.Delay(100);
             await both.turnDegree(baseforce, turnspeed, 90*c);
-            await both.stop(200);
             await alignDirection();
+            await both.stop(200);
             while(isOpenAside(ultraWall)) {
                 await both.together(baseforce, basespeed);
                 await Time.Delay(root_delay);
@@ -1098,23 +1115,44 @@ bool isSeeing() {
 }
 
 async Task getVictim(double c=1) {
-    ulong initial_time = 0;
     ulong last_align_time = 0;
 
     for (int counter=0; counter<=20; counter++) {
         ulong time_to_victim = millis();
         
-        double min_mid_distance = 3.3d;
-
+        double min_mid_distance = 8d;
+        both.exclusivity = true;
         await both.turnDegree(baseforce, 200, 2d*-c);
+        both.exclusivity = false;
         await both.stop();
 
+        double current_distance;
+        double start_distance;
+        double delta_angle;
         while (isSeeing() && getDistance(ultraMid)>min_mid_distance) {
+            start_distance = getDistance(ultraDown);
             await both.together(baseforce, basespeed);
             await Time.Delay(root_delay);
+            current_distance = getDistance(ultraDown);
+            delta_angle = start_distance - current_distance;
+            IO.Print($@"
+                start_distance = {start_distance}
+                current_distance = {current_distance}                
+                delta_distance: {(delta_angle)}
+            ");
+
+            if (delta_angle>0.5 && delta_angle<900) {
+                IO.PrintLine("desalinhou, tentando ajustar");
+                await both.stop();
+                await both.together(baseforce, basespeed, -0.1);
+                // resta saber se é pra direita ou pra esquerda, //FALTA TESTAR
+                both.exclusivity = true;
+                await both.turnDegree(baseforce, 200, 1*c);
+                both.exclusivity = false;
+                await Time.Delay(100);
+            }
         }
         time_to_victim = millis() - time_to_victim;
-        if (counter==0) initial_time = time_to_victim;
         await both.stop(100);
         // align to victim
         double align_speed = 250;
@@ -1151,18 +1189,19 @@ async Task getVictim(double c=1) {
         await both.together(baseforce, 150, -avoid_mistake_rotations);
 
         await both.turnDegree(baseforce, basespeed, 5); // to avoid misalignment caused by hand
-
-        IO.PrintLine($"compass after picking victim: {Bot.Compass}");
+        await both.stop();
         await Time.Delay(200);
+        IO.PrintLine($"compass after picking victim: {Bot.Compass}");
         
         IO.PrintLine("seeking victim around...");
         bool still_turn = true;
         ulong align_time = millis();
-        while(getDistance(ultraDown)>6.1d && still_turn && getDistance(ultraMid)>min_mid_distance) {
+        while(still_turn) {
             await moveRight(baseforce, 250*c);
             await moveLeft(baseforce, 250*-c);
             await Time.Delay(root_delay);
             still_turn = ((millis()-align_time+last_align_time)<4200);
+            if (getDistance(ultraDown)<6.1d && getDistance(ultraMid)>5) break;
         }
         align_time = millis() - align_time + last_align_time;
         last_align_time = align_time;
@@ -1188,8 +1227,7 @@ async Task getVictim(double c=1) {
 
     // go back
     await alignDirection();
-    await both.together(baseforce, -basespeed);
-    await Time.Delay(initial_time); //*0.95d
+    await reachWallBackwards();
 }
 
 async Task RescueProcess() {
@@ -1237,7 +1275,7 @@ async Task RescueProcess() {
     IO.PrintLine($"main_side: {main_side}");
     while(true) { // loop until find black box
         await alignDirection();
-        await both.stop(); //await Time.Delay(root_delay);
+        await both.stop();
         await Time.Delay(300);
         last_distance = getDistance(ultraMid);
         IO.PrintLine($"last_distance: {last_distance}");
@@ -1268,8 +1306,7 @@ async Task RescueProcess() {
     is_down = (last_distance<50); // deitada
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
-    //await deliverItem(main_side, (isBlue(bagColorL, 1) || isBlue(bagColorR, 1)));
-    await deliverItem(main_side);
+    await deliverItem(main_side, true, 0.95d);
     await Time.Delay(300);
 
     double c = 0;
@@ -1287,6 +1324,7 @@ async Task RescueProcess() {
 
     IO.PrintLine($"c={c}");
     UltrasonicSensor ultraMidAux = (c>0) ? ultraMid : ultraMidRight;
+    await both.together(baseforce, basespeed, 0.1);
     await both.turnDegree(baseforce, turnspeed, 45*-c);
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 45*-c);
@@ -1296,7 +1334,7 @@ async Task RescueProcess() {
     bool must_deliver = false;
     while(!must_deliver) {
         last_distance = 999;
-        while(last_distance==999 && !must_deliver) {
+        while(last_distance>28 && !must_deliver) {
             await Time.Delay(root_delay);
             await both.together(500, 200);
             last_distance = getDistance(ultraSide);
@@ -1338,7 +1376,7 @@ async Task RescueProcess() {
     await alignDirection();
     
     await adjustFrontDistance(baseforce, basespeed, 10.1);
-    await deliverItem(-c);
+    await deliverItem(-c, wait_bag: 400);
     await Time.Delay(300);
 
     IO.PrintLine("end of rescue");
