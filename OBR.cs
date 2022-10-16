@@ -37,7 +37,7 @@ TouchSensor touchL = Bot.GetComponent<TouchSensor>("touchLeft");
 
 
 // editable variables ////////////////////////
-double initial_basespeed = 190; // 190
+double initial_basespeed = 220; // 190
 double initial_baseforce = 500; // 500
 double initial_turnspeed = 400; // 400
 double superforce = 500;
@@ -55,9 +55,9 @@ bool had_green = false;
 
 // for PID line follower:
 int error = 0, last_error = 0;
-float     Kp = 141f, // 140
-        Ki = 4.5f, // 5
-        Kd = 15f; // 15
+float     Kp = 152f, // 141
+        Ki = 3.7f, // 4.5
+        Kd = 14f; // 15
 
 float     P=0, I=0, D=0, PID=0;
 
@@ -476,11 +476,12 @@ async Task MainProcess() {
         double back_rotations = 0.7;
         double side_rotations = 0.95;
         double last_rotations = 0.2; // 0.4
-        double front_rotations = 2.6;
+        double front_rotations = 2.1;
         IO.Print("going back");
         await alignDirection();
         await both.together(superforce, basespeed, -back_rotations);
         if (getDistance(ultraLeft)<10) c = 1;
+        await both.together(superforce, basespeed, 0.2d);
         await both.turnDegree(superforce, turnspeed, turn_angle*c);
         await alignDirection();
         await both.together(superforce, basespeed, side_rotations);
@@ -565,7 +566,6 @@ async Task MainProcess() {
 
         await both.together(superforce, basespeed, 0.2);
         await seekLine(-c, false);
-        if (isRescue()) return;
         bool crossing  = !was_gap;
         if (crossing) {
             IO.PrintLine("false curve, continuing...");
@@ -1128,6 +1128,7 @@ bool isSeeing() {
 
 async Task getVictim(double c=1) {
     ulong last_align_time = 0;
+    ulong total_align_time = 0;
 
     for (int counter=0; counter<=20; counter++) {
         ulong time_to_victim = millis();
@@ -1174,20 +1175,26 @@ async Task getVictim(double c=1) {
         IO.PrintLine($"compass after picking victim: {Bot.Compass}");
         
         await both.turnDegree(500, basespeed, first_align_degrees*c);
+        await moveRight(baseforce, 250*-c);
+        await moveLeft(baseforce, 250*c);
+        await Time.Delay(last_align_time);
 
         IO.PrintLine("seeking victim around...");
         bool still_turn = true;
-        ulong align_time = millis();
+        last_align_time = millis();
         while(still_turn) {
             await moveRight(baseforce, 250*c);
             await moveLeft(baseforce, 250*-c);
             await Time.Delay(root_delay);
-            still_turn = ((millis()-align_time+last_align_time)<3900); // 4200
+            still_turn = ((millis() - last_align_time + total_align_time)<3800); // 4200
             if (getDistance(ultraDown)<6.1d && getDistance(ultraMid)>5) break;
         }
-        align_time = millis() - align_time + last_align_time;
-        last_align_time = align_time;
-        IO.PrintLine($"align_time: {align_time}");
+        last_align_time = millis() - last_align_time;
+        total_align_time += last_align_time;
+        IO.PrintLine($@"
+            last_align_time: {last_align_time}
+            total_align_time: {total_align_time}
+        ");
         await both.stop();
 
         if (still_turn) {
@@ -1197,7 +1204,7 @@ async Task getVictim(double c=1) {
             IO.PrintLine("max range reachead");
             await moveRight(baseforce, 250*-c);
             await moveLeft(baseforce, 250*c);
-            await Time.Delay(align_time);
+            await Time.Delay(total_align_time);
             await both.stop();
             break;
         }
