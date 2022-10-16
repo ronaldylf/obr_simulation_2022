@@ -1326,7 +1326,7 @@ async Task RescueProcess() {
     }
     IO.PrintLine($"is_up:{is_up} | is_down: {is_down}");
 
-    await deliverItem(main_side, true, 0.95d: wait_bag: 250); // deliver cube
+    await deliverItem(main_side, true, 0.95d, wait_bag: 250); // deliver cube
     await Time.Delay(300);
     double c = 0;
     if (is_up && main_side==-1) {
