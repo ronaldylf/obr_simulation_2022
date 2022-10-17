@@ -477,6 +477,7 @@ async Task MainProcess() {
         double c = -1;
         UltrasonicSensor ultraSide = (c>0) ? ultraLeft : ultraRight;
         double back_rotations = 0.05;
+        bool line_around = false;
 
         await alignDirection();
         await both.together(baseforce, basespeed, -back_rotations);
@@ -499,13 +500,17 @@ async Task MainProcess() {
         await alignDirection();
 
         await both.together(baseforce, basespeed);
-        while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
+        while(getDistance(ultraSide)>10) {
+            await Time.Delay(root_delay);
+            line_around = !isGap() || line_around;
+        }
         await both.stop();
-
         initial_distance = getDistance(ultraSide);
-
         await both.together(baseforce, basespeed);
-        while(getDistance(ultraSide)<=(initial_distance+1)) await Time.Delay(root_delay);
+        while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) {
+            await Time.Delay(root_delay);
+            line_around = !isGap() || line_around;
+        }
         await Time.Delay(380);
         await both.stop();
 
@@ -516,12 +521,11 @@ async Task MainProcess() {
             await moveRight(baseforce, 500);
             await moveLeft(baseforce, -400*0.5);
         }
-        await Time.Delay(1800);
+        await Time.Delay(1700);
         await alignDirection();
 
         await both.together(baseforce, basespeed);
-        while (isGap()) await Time.Delay(root_delay);
-        await Time.Delay(500);
+        await Time.Delay(600);
         await both.stop();
 
         await both.turnDegree(baseforce, turnspeed, 90*c);
@@ -529,7 +533,66 @@ async Task MainProcess() {
 
         await both.together(baseforce, -basespeed);
         while (!hasTouched()) await Time.Delay(root_delay);
-        await seekLine();
+        await seekLine(c);
+        bool is_90 = was_gap;
+        IO.PrintLine($"is_90={is_90} || line_around={line_around}");
+
+        if (is_90) {
+            await alignDirection();
+            await both.together(baseforce, basespeed, 0.2);
+            if ((c<0 && !line_around) || (c>0 && line_around)) {
+                ultraSide = ultraRight;
+                IO.PrintLine("90 obstacle for right");
+                await both.turnDegree(baseforce, turnspeed, 90);
+                await alignDirection();
+
+                await both.together(baseforce, basespeed);
+                while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
+                await both.stop();
+                initial_distance = getDistance(ultraSide);
+                await both.together(baseforce, basespeed);
+                while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) await Time.Delay(root_delay);
+                await Time.Delay(400);
+                await both.stop();
+                await moveLeft(baseforce, 500);
+                await moveRight(baseforce, -400*0.5);
+                await Time.Delay(1700);
+                await both.stop();
+                await alignDirection();
+                await both.together(baseforce, basespeed);
+                while (isGap()) await Time.Delay(root_delay);
+                await Time.Delay(200);
+                await both.turnDegree(baseforce, basespeed, -90);
+            } else {
+                ultraSide = ultraLeft;
+                IO.PrintLine("90 obstacle for left");
+                await both.turnDegree(baseforce, turnspeed, -90);
+                await alignDirection();
+
+                await both.together(baseforce, basespeed);
+                while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
+                await both.stop();
+                initial_distance = getDistance(ultraSide);
+                await both.together(baseforce, basespeed);
+                while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) await Time.Delay(root_delay);
+                await Time.Delay(400);
+                await both.stop();
+                await moveRight(baseforce, 500);
+                await moveLeft(baseforce, -400*0.5);
+                await Time.Delay(1700);
+                await both.stop();
+                await alignDirection();
+                await both.together(baseforce, basespeed);
+                while (isGap()) await Time.Delay(root_delay);
+                await Time.Delay(200);
+                await both.turnDegree(baseforce, basespeed, 90);
+            }
+            await both.stop();
+            await alignDirection();
+            await both.together(baseforce, -basespeed);
+            while (!hasTouched()) await Time.Delay(root_delay);
+            await seekLine(c);
+        }
 
         baseforce = initial_baseforce;
         basespeed = initial_basespeed;
@@ -753,7 +816,13 @@ bool isDownRamp() {
 
 
 bool isGap() {
-    bool gap = readFullLine()=="0 0 0 0 0";
+    bool have_left = !LeftColor.Digital && !isBlue(LeftColor);
+    bool have_mid = !MidColor.Digital && !isBlue(MidColor);
+    bool have_right = !RightColor.Digital && !isBlue(RightColor);
+    bool have_rr = !ExtremeRightColor.Digital && !isBlue(ExtremeRightColor);
+    bool have_ll = !ExtremeLeftColor.Digital && !isBlue(ExtremeLeftColor);
+
+    bool gap = !have_ll && !have_left && !have_mid && !have_right && !have_rr;
     was_gap = gap;
     return gap;
 }
@@ -1188,7 +1257,7 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
         IO.PrintLine($"compass before victim: {Bot.Compass}");
         await grabItem(); // get victim
         victims++;
-        IO.PrintLine("got victim");
+        IO.PrintLine($"got victim: {victims}");
         await Time.Delay(200);
         double avoid_mistake_rotations = 0.1;
         await both.together(baseforce, 150, avoid_mistake_rotations);
@@ -1215,10 +1284,10 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
         }
         last_align_time = millis() - last_align_time;
         total_align_time += last_align_time;
-        IO.PrintLine($@"
-            last_align_time: {last_align_time}
-            total_align_time: {total_align_time}
-        ");
+        // IO.PrintLine($@"
+        //     last_align_time: {last_align_time}
+        //     total_align_time: {total_align_time}
+        // ");
         await both.stop();
 
         if (still_turn) {
