@@ -461,7 +461,8 @@ async Task MainProcess() {
     
     if (isDownRamp()) {
         IO.Print($"down_ramp: {Bot.Inclination}");
-        basespeed = initial_basespeed*0.6; //0.6
+        //basespeed = initial_basespeed*0.6; //0.6
+        basespeed = 114;
         return;
     }
 
@@ -485,54 +486,92 @@ async Task MainProcess() {
         await alignDirection();
         double initial_distance = getDistance(ultraSide);
 
-        await both.together(baseforce, basespeed);
-        while(getDistance(ultraSide)<=(initial_distance+1)) await Time.Delay(root_delay);
-        await both.stop();
-
-        if (c<0) {
-            await moveLeft(baseforce, 500);
-            await moveRight(baseforce, -400*0.5);
-        } else {
-            await moveRight(baseforce, 500);
-            await moveLeft(baseforce, -400*0.5);
+        async Task alignSide(UltrasonicSensor ultra) {
+            initial_distance = getDistance(ultra);
+            IO.PrintLine($"initial_distance={initial_distance}");
+            if (initial_distance>10) {
+                await both.together(baseforce, basespeed, -0.2d);
+                await both.together(baseforce, 150);
+                while (initial_distance>10) {
+                    await Time.Delay(root_delay);
+                    initial_distance = getDistance(ultra);
+                }
+                await both.stop();
+            }
         }
-        await Time.Delay(1800);
+
+        async Task goUntilFar(UltrasonicSensor ultra, double min_distance, double last_delay=0) {
+            await both.together(baseforce, basespeed);
+            while(getDistance(ultra)<=(min_distance+1)) await Time.Delay(root_delay);
+            await Time.Delay(last_delay);
+            await both.stop();
+        }
+
+
+        async Task spin(double side=1, double time=1800) {
+            if (side<0) {
+                await moveLeft(baseforce, 500);
+                await moveRight(baseforce, -400*0.5);
+            } else {
+                await moveRight(baseforce, 500);
+                await moveLeft(baseforce, -400*0.5);
+            }
+            await Time.Delay(time);
+            await both.stop();
+        }
+        
+        async Task goUntilClose(UltrasonicSensor ultra) {
+            await both.together(baseforce, basespeed);
+            while(getDistance(ultra)>10) {
+                await Time.Delay(root_delay);
+                line_around = !isGap() || line_around;
+                initial_distance = getDistance(ultra);
+            }
+            await both.stop();
+        }
+
+        async Task goBackUntilTouch() {
+            await both.together(baseforce, -basespeed);
+            while (!hasTouched()) await Time.Delay(root_delay);
+        }
+
+        async Task curveObstacle(double side=1) {
+            IO.PrintLine($"90 obstacle for side: {side}");
+            ultraSide = (side>0) ? ultraRight : ultraLeft;
+            await alignDirection();
+            await both.turnDegree(baseforce, turnspeed, 90*side);
+            await alignDirection();
+
+            await alignSide(ultraSide);
+            await goUntilClose(ultraSide);
+            await goUntilFar(ultraSide, initial_distance, last_delay: 400);
+            await spin(-side, time: 1700);
+            await alignDirection();
+
+            await both.together(baseforce, basespeed, 0.5);
+            await alignDirection();
+            await alignSide(ultraSide);
+            await both.turnDegree(baseforce, turnspeed, 90*-side);
+        }
+
+        // align ultrassonic with obstacle
+        await alignSide(ultraSide);
+        await goUntilFar(ultraSide, initial_distance);
+        await spin(c, 1800);        
+        await alignDirection();
+        await goUntilClose(ultraSide);
+        await goUntilFar(ultraSide, initial_distance, last_delay: 380);    
+        await spin(c, 1700);
         await alignDirection();
 
-        await both.together(baseforce, basespeed);
-        while(getDistance(ultraSide)>10) {
-            await Time.Delay(root_delay);
-            line_around = !isGap() || line_around;
-        }
-        await both.stop();
-        initial_distance = getDistance(ultraSide);
-        await both.together(baseforce, basespeed);
-        while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) {
-            await Time.Delay(root_delay);
-            line_around = !isGap() || line_around;
-        }
-        await Time.Delay(380);
-        await both.stop();
-
-        if (c<0) {
-            await moveLeft(baseforce, 500);
-            await moveRight(baseforce, -400*0.5);
-        } else {
-            await moveRight(baseforce, 500);
-            await moveLeft(baseforce, -400*0.5);
-        }
-        await Time.Delay(1700);
+        await both.together(baseforce, basespeed, 0.5);
         await alignDirection();
-
-        await both.together(baseforce, basespeed);
-        await Time.Delay(600);
-        await both.stop();
+        await alignSide(ultraSide);
 
         await both.turnDegree(baseforce, turnspeed, 90*c);
         await alignDirection();
 
-        await both.together(baseforce, -basespeed);
-        while (!hasTouched()) await Time.Delay(root_delay);
+        await goBackUntilTouch();
         await seekLine(c);
         bool is_90 = was_gap;
         IO.PrintLine($"is_90={is_90} || line_around={line_around}");
@@ -541,56 +580,13 @@ async Task MainProcess() {
             await alignDirection();
             await both.together(baseforce, basespeed, 0.2);
             if ((c<0 && !line_around) || (c>0 && line_around)) {
-                ultraSide = ultraRight;
-                IO.PrintLine("90 obstacle for right");
-                await both.turnDegree(baseforce, turnspeed, 90);
-                await alignDirection();
-
-                await both.together(baseforce, basespeed);
-                while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
-                await both.stop();
-                initial_distance = getDistance(ultraSide);
-                await both.together(baseforce, basespeed);
-                while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) await Time.Delay(root_delay);
-                await Time.Delay(400);
-                await both.stop();
-                await moveLeft(baseforce, 500);
-                await moveRight(baseforce, -400*0.5);
-                await Time.Delay(1700);
-                await both.stop();
-                await alignDirection();
-                await both.together(baseforce, basespeed);
-                while (isGap()) await Time.Delay(root_delay);
-                await Time.Delay(200);
-                await both.turnDegree(baseforce, basespeed, -90);
+                await curveObstacle(1);
             } else {
-                ultraSide = ultraLeft;
-                IO.PrintLine("90 obstacle for left");
-                await both.turnDegree(baseforce, turnspeed, -90);
-                await alignDirection();
-
-                await both.together(baseforce, basespeed);
-                while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
-                await both.stop();
-                initial_distance = getDistance(ultraSide);
-                await both.together(baseforce, basespeed);
-                while(getDistance(ultraSide)<=(initial_distance+1) && getDistance(ultraSide)!=999) await Time.Delay(root_delay);
-                await Time.Delay(400);
-                await both.stop();
-                await moveRight(baseforce, 500);
-                await moveLeft(baseforce, -400*0.5);
-                await Time.Delay(1700);
-                await both.stop();
-                await alignDirection();
-                await both.together(baseforce, basespeed);
-                while (isGap()) await Time.Delay(root_delay);
-                await Time.Delay(200);
-                await both.turnDegree(baseforce, basespeed, 90);
+                await curveObstacle(-1);
             }
             await both.stop();
             await alignDirection();
-            await both.together(baseforce, -basespeed);
-            while (!hasTouched()) await Time.Delay(root_delay);
+            await goBackUntilTouch();
             await seekLine(c);
         }
 
@@ -629,7 +625,7 @@ async Task MainProcess() {
             await SharpCurve(turnspeed, c);
         } else { // 180 green
             await both.together(superforce, basespeed, -0.1);
-            await both.turnDegree(superforce, 500, -210);
+            await both.turnDegree(superforce, 500, -205);
             await both.together(superforce, basespeed, -0.1);
             await seekLine();
         }
@@ -816,11 +812,11 @@ bool isDownRamp() {
 
 
 bool isGap() {
-    bool have_left = !LeftColor.Digital && !isBlue(LeftColor);
-    bool have_mid = !MidColor.Digital && !isBlue(MidColor);
-    bool have_right = !RightColor.Digital && !isBlue(RightColor);
-    bool have_rr = !ExtremeRightColor.Digital && !isBlue(ExtremeRightColor);
-    bool have_ll = !ExtremeLeftColor.Digital && !isBlue(ExtremeLeftColor);
+    bool have_left = !LeftColor.Digital && !isBlue(LeftColor) && !isRed(LeftColor);
+    bool have_mid = !MidColor.Digital && !isBlue(MidColor) && !isRed(MidColor);
+    bool have_right = !RightColor.Digital && !isBlue(RightColor) && !isRed(RightColor);
+    bool have_rr = !ExtremeRightColor.Digital && !isBlue(ExtremeRightColor) && !isRed(ExtremeRightColor);
+    bool have_ll = !ExtremeLeftColor.Digital && !isBlue(ExtremeLeftColor) && !isRed(ExtremeLeftColor);
 
     bool gap = !have_ll && !have_left && !have_mid && !have_right && !have_rr;
     was_gap = gap;
@@ -1083,10 +1079,10 @@ async Task reachWallBackwards(double minimum_distance=2.1) {
 async Task deliverItem(double c=1, bool must_open_bag=true, double rotations=1.2, double wait_bag=200) {
     await both.stop();
     await alignDirection();
-    await both.turnDegree(baseforce, turnspeed, 47*c);
+    await both.turnDegree(baseforce, turnspeed, 49*c);
     await both.together(baseforce, basespeed, rotations);
 
-    await both.turnDegree(baseforce, turnspeed, 90*c);
+    await both.turnDegree(baseforce, turnspeed, 80*c); // 90
     await alignBack();
     if (must_open_bag) {
         handClose();
@@ -1220,6 +1216,7 @@ bool isSeeing() {
 async Task getVictim(double c=1, double distance_backwards=2.1) {
     ulong last_align_time = 0;
     ulong total_align_time = 0;
+    double other_side_degrees = 25;
 
     for (int counter=0; counter<=20; counter++) {
         ulong time_to_victim = millis();
@@ -1268,9 +1265,13 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
         IO.PrintLine($"compass after picking victim: {Bot.Compass}");
         
         await both.turnDegree(500, basespeed, first_align_degrees*c);
-        await moveRight(baseforce, 250*-c);
-        await moveLeft(baseforce, 250*c);
-        await Time.Delay(last_align_time);
+
+        if (counter==0) {
+            IO.PrintLine("going to the other side");
+            both.exclusivity = true;
+            await both.turnDegree(baseforce, basespeed, other_side_degrees*c);
+            both.exclusivity = false;
+        }
 
         IO.PrintLine("seeking victim around...");
         bool still_turn = true;
@@ -1279,11 +1280,11 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
             await moveRight(baseforce, 250*c);
             await moveLeft(baseforce, 250*-c);
             await Time.Delay(root_delay);
-            still_turn = ((millis() - last_align_time + total_align_time)<3800); // 4200
+            still_turn = ((millis() - last_align_time + total_align_time)<5000); // 4200
             if (getDistance(ultraDown)<6.1d && getDistance(ultraMid)>5) break;
         }
         last_align_time = millis() - last_align_time;
-        total_align_time += last_align_time;
+        total_align_time += last_align_time*(ulong)1;
         // IO.PrintLine($@"
         //     last_align_time: {last_align_time}
         //     total_align_time: {total_align_time}
@@ -1299,11 +1300,14 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
             await moveLeft(baseforce, 250*c);
             await Time.Delay(total_align_time);
             await both.stop();
+            both.exclusivity = true;
+            await both.turnDegree(baseforce, turnspeed, 0.7d*other_side_degrees*-c);
+            both.exclusivity = false;
             break;
         }
 
         await both.together(baseforce, -basespeed);
-        await Time.Delay(time_to_victim); //*0.95d
+        await Time.Delay(time_to_victim*1.2);
     }
 
 
