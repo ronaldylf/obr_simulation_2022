@@ -52,6 +52,7 @@ bool is_arm_up = true;
 const double root_delay = 50;
 bool was_gap = false;
 bool had_green = false;
+double victims = 0;
 
 // for PID line follower:
 int error = 0, last_error = 0;
@@ -1155,6 +1156,8 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
         await both.turnDegree(500, align_speed, 3d); // "tequinho"
         IO.PrintLine($"compass before victim: {Bot.Compass}");
         await grabItem(); // get victim
+        victims++;
+        IO.PrintLine("got victim");
         await Time.Delay(200);
         double avoid_mistake_rotations = 0.1;
         await both.together(baseforce, 150, avoid_mistake_rotations);
@@ -1353,7 +1356,7 @@ async Task RescueProcess() {
             await Time.Delay(root_delay);
             await both.together(500, 200);
             last_distance = getDistance(ultraSide);
-            must_deliver = hasSomeGreen() || getDistance(ultraMid)<4 || isRescue();
+            must_deliver = hasSomeGreen() || getDistance(ultraMid)<4 || isRescue() || victims==3;
             box_distance = getDistance(ultraBack);
             if (hasSomeGreen() || isRescue()) {
                 await both.stop();
@@ -1394,7 +1397,7 @@ async Task RescueProcess() {
 
         IO.PrintLine("end of a cycle");
     }
-    
+
     await both.turnDegree(baseforce, turnspeed, 90*c);
     await alignDirection();
     await both.turnDegree(baseforce, turnspeed, 90*c);
@@ -1404,7 +1407,7 @@ async Task RescueProcess() {
     await deliverItem(-c, wait_bag: 600); // deliver victims
     await Time.Delay(300);
 
-    IO.PrintLine("end of rescue");
+    IO.PrintLine($"end of rescue, got {victims} victims");
     double exit_side = (already_found_exit) ? -main_side : main_side;
     IO.PrintLine($"searching exit with exit_side = {exit_side}");
     await searchExit(exit_side);
