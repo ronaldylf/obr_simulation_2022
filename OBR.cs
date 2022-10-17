@@ -470,39 +470,70 @@ async Task MainProcess() {
 
     if (has_obstacle) {
         IO.PrintLine("obstacle ahead");
-        await both.together(baseforce, basespeed);
-        await alignDirection();
+        baseforce = 500;
+        basespeed = 220;
+        turnspeed = 400;
+
         double c = -1;
-        double turn_angle = 90;
-        double back_rotations = 0.7;
-        double side_rotations = 0.95;
-        double last_rotations = 0.2; // 0.4
-        double front_rotations = 2.1;
-        IO.Print("going back");
+        UltrasonicSensor ultraSide = (c>0) ? ultraLeft : ultraRight;
+        double back_rotations = 0.05;
+
         await alignDirection();
-        await both.together(superforce, basespeed, -back_rotations);
-        if (getDistance(ultraLeft)<10) c = 1;
-        await both.together(superforce, basespeed, 0.2d);
-        await both.turnDegree(superforce, turnspeed, turn_angle*c);
+        await both.together(baseforce, basespeed, -back_rotations);
+        await both.turnDegree(baseforce, turnspeed, 90*c);
         await alignDirection();
-        await both.together(superforce, basespeed, side_rotations);
-        await both.turnDegree(superforce, turnspeed, turn_angle*-c);
-        await alignDirection();
-        await both.together(superforce, basespeed, front_rotations);
-        await both.turnDegree(superforce, turnspeed, turn_angle*-c);
-        await alignDirection();
-        while(isGap()) {
-            await both.together(superforce, basespeed);
-            await Time.Delay(root_delay);
+        double initial_distance = getDistance(ultraSide);
+
+        await both.together(baseforce, basespeed);
+        while(getDistance(ultraSide)<=(initial_distance+1)) await Time.Delay(root_delay);
+        await both.stop();
+
+        if (c<0) {
+            await moveLeft(baseforce, 500);
+            await moveRight(baseforce, -400*0.5);
+        } else {
+            await moveRight(baseforce, 500);
+            await moveLeft(baseforce, -400*0.5);
         }
-        await both.stop();
-        await both.together(superforce, basespeed, last_rotations);
-        await both.turnDegree(superforce, turnspeed, turn_angle*c);
+        await Time.Delay(1800);
         await alignDirection();
-        await both.together(superforce, -200);
-        while(!touchL.Digital && !touchM.Digital && !touchR.Digital) await Time.Delay(root_delay);
+
+        await both.together(baseforce, basespeed);
+        while(getDistance(ultraSide)>10) await Time.Delay(root_delay);
         await both.stop();
+
+        initial_distance = getDistance(ultraSide);
+
+        await both.together(baseforce, basespeed);
+        while(getDistance(ultraSide)<=(initial_distance+1)) await Time.Delay(root_delay);
+        await Time.Delay(380);
+        await both.stop();
+
+        if (c<0) {
+            await moveLeft(baseforce, 500);
+            await moveRight(baseforce, -400*0.5);
+        } else {
+            await moveRight(baseforce, 500);
+            await moveLeft(baseforce, -400*0.5);
+        }
+        await Time.Delay(1800);
+        await alignDirection();
+
+        await both.together(baseforce, basespeed);
+        while (isGap()) await Time.Delay(root_delay);
+        await Time.Delay(500);
+        await both.stop();
+
+        await both.turnDegree(baseforce, turnspeed, 90*c);
+        await alignDirection();
+
+        await both.together(baseforce, -basespeed);
+        while (!hasTouched()) await Time.Delay(root_delay);
         await seekLine();
+
+        baseforce = initial_baseforce;
+        basespeed = initial_basespeed;
+        turnspeed = initial_turnspeed;
         return;
     }
 
