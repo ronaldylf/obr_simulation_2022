@@ -1300,9 +1300,6 @@ async Task getVictim(double c=1, double distance_backwards=2.1) {
             await moveLeft(baseforce, 250*c);
             await Time.Delay(total_align_time);
             await both.stop();
-            both.exclusivity = true;
-            await both.turnDegree(baseforce, turnspeed, 0.7d*other_side_degrees*-c);
-            both.exclusivity = false;
             break;
         }
 
